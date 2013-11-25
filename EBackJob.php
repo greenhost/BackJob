@@ -6,7 +6,7 @@
  * @author Siquo
  * @copyright 2013 Greenhost
  * @package backjob
- * @version 0.31
+ * @version 0.32
  * @license New BSD License
  *
  *
@@ -96,6 +96,12 @@ class EBackJob extends CApplicationComponent {
 	public $userAgent = 'Mozilla/5.0 Firefox/3.6.12';
 
 	/**
+	 * Number of seconds after which an error-timeout occurs.
+	 * @var integer
+	 */
+	public $errorTimeout = 60;
+
+	/**
 	 * If we're inside a jobrequest, this is the current ID
 	 * @var integer
 	 */
@@ -127,7 +133,7 @@ class EBackJob extends CApplicationComponent {
 	public function startRequest($event) {
 		ignore_user_abort(true);
 		// Turn off web route for logging
-		if(isset(Yii::app()->log->routes['cweb']))
+		if (isset(Yii::app()->log->routes['cweb']))
 			Yii::app()->log->routes['cweb']->enabled = false;
 		$this->update(array('progress' => 0));
 		ob_start();
@@ -139,9 +145,9 @@ class EBackJob extends CApplicationComponent {
 	 */
 	public function endRequest($event) {
 		$content = ob_get_clean();
-		if($error = Yii::app()->errorHandler->error){
+		if ($error = Yii::app()->errorHandler->error) {
 			$this->fail(array(
-				'status_text' => $content. var_export($error['message'], true)
+				'status_text' => $content . var_export($error['message'], true)
 			));
 		} else {
 			$this->finish(array(
@@ -174,12 +180,23 @@ class EBackJob extends CApplicationComponent {
 		if (!is_array($ret)) {
 			$ret = array();
 		}
-		$ret = CMap::mergeArray(array(
-					'progress' => 0,
-					'status' => self::STATUS_STARTED,
-					'start_time' => date('Y-m-d h:i:s'),
-					'updated_time' => date('Y-m-d h:i:s'),
-						), $ret);
+		
+		// also set defaults
+		$ret = array_merge(array(
+				'progress' => 0,
+				'status' => self::STATUS_STARTED,
+				'start_time' => date('Y-m-d h:i:s'),
+				'updated_time' => date('Y-m-d h:i:s'),
+			), $ret);
+
+		// Check for a timeout error
+		if ($jobId && 
+				$ret['status'] < self::STATUS_COMPLETED &&
+				(strtotime($ret['updated_time']) + ($this->errorTimeout)) < time()) {
+			$this->fail(array("status_text"=>"Error: background job timeout"), $jobId);
+			$ret = $this->getStatus($jobId);
+		}
+
 		return $ret;
 	}
 
@@ -225,7 +242,7 @@ class EBackJob extends CApplicationComponent {
 		if (!$jobId)
 			$jobId = $this->currentJobId;
 		$job = $this->getStatus($jobId);
-		if($job['status'] < self::STATUS_COMPLETED){
+		if ($job['status'] < self::STATUS_COMPLETED) {
 			$this->update(array_merge(
 				array(
 					'progress' => 100,
@@ -235,7 +252,7 @@ class EBackJob extends CApplicationComponent {
 			), $jobId);
 		}
 	}
-	
+
 	/**
 	 * Fail a job (alias for "update as finished with a fail status")
 	 * @param integer $jobId
@@ -245,11 +262,11 @@ class EBackJob extends CApplicationComponent {
 		if (!$jobId)
 			$jobId = $this->currentJobId;
 		$this->update(array_merge(
-			array(
-				'end_time' => date('Y-m-d h:i:s'),
-				'status' => self::STATUS_FAILED,
-			), $status
-		), $jobId);
+				array(
+					'end_time' => date('Y-m-d h:i:s'),
+					'status' => self::STATUS_FAILED,
+				), $status
+			), $jobId);
 		Yii::app()->end();
 	}
 
@@ -298,7 +315,7 @@ class EBackJob extends CApplicationComponent {
 		$a = $this->cache[$this->cachePrefix . $jobId];
 		if (!$a)
 			$a = array();
-		$this->cache[$this->cachePrefix . $jobId] = CMap::mergeArray($this->cache[$this->cachePrefix . $jobId], $status);
+		$this->cache[$this->cachePrefix . $jobId] = array_merge($a, $status);
 	}
 
 	/**
@@ -307,7 +324,7 @@ class EBackJob extends CApplicationComponent {
 	 * @param array $status
 	 */
 	private function setDbStatus($jobId, $status) {
-		$this->database->createCommand()->update($this->tableName, $status, 'id=' . $jobId);
+		$this->database->createCommand()->update($this->tableName, $status, 'id=:id', array(':id' => $jobId));
 	}
 
 	/**
@@ -317,7 +334,8 @@ class EBackJob extends CApplicationComponent {
 	 */
 	private function createStatus($status = array()) {
 		$jobId = false;
-		$status = $this->getStatus(false);
+		$status = array_merge($this->getStatus(false), $status);
+		d($status);
 		if ($this->useDb) {
 			$this->database->createCommand()->insert($this->tableName, $status);
 			$jobId = $this->database->lastInsertId;
@@ -355,6 +373,7 @@ class EBackJob extends CApplicationComponent {
 					'start_time' => 'timestamp',
 					'updated_time' => 'timestamp',
 					'end_time' => 'timestamp',
+					'request' => 'text',
 					'status_text' => 'text',
 				)
 			)
@@ -368,18 +387,20 @@ class EBackJob extends CApplicationComponent {
 	 * @return string Job-ID: the job id through which the job can be monitored
 	 */
 	protected function runAction($request, $asCurrentUser = true) {
+		$params = array();
 		if (is_array($request)) {
 			$route = $request[0];
-			unset($request[0]);
+			$params = $request;
+			unset($params[0]);
 		} else {
 			$route = $request;
-			$request = array();
+			$request = array($route);
 		}
 
-		$jobId = $this->createStatus();
-		$request['_e_back_job_id'] = $jobId;
+		$jobId = $this->createStatus(array('request' => json_encode($request)));
+		$params['_e_back_job_id'] = $jobId;
 
-		$return = $this->doRequest($route, $request, $asCurrentUser);
+		$return = $this->doRequest($route, $params, $asCurrentUser);
 
 		if ($return !== true) {
 			$this->finish(array(
@@ -399,12 +420,12 @@ class EBackJob extends CApplicationComponent {
 	 */
 	protected function doRequest($route, $request = array(), $asCurrentUser = true) {
 		$uri = Yii::app()->controller->createAbsoluteUrl($route, $request);
-		$uri = '/' . preg_replace('/http:\/\/(.)*?\//', '', $uri);
+		$uri = '/' . preg_replace('/https?:\/\/(.)*?\//', '', $uri);
 
 		$port = Yii::app()->request->serverPort;
 		$host = Yii::app()->request->serverName;
 
-		if (($fp = fsockopen($host, $port, $errno, $errstr, 1000)) == false) {
+		if (($fp = fsockopen(($port == 443 ? 'ssl://' : '') . $host, $port, $errno, $errstr, 1000)) == false) {
 			return "Error $errno: $errstr";
 		}
 
@@ -414,19 +435,20 @@ class EBackJob extends CApplicationComponent {
 			foreach (Yii::app()->request->cookies as $k => $v)
 				$cookies .= urlencode($k) . '=' . urlencode($v) . '; ';
 
-		$crlf = "\r\n";
-		$req = 'GET ' . $uri . ' HTTP/1.1' . $crlf;
-		$req .= 'Host: ' . $host . ($port ? ':' : '') . $port . $crlf;
-		$req .= 'User-Agent: ' . $this->userAgent . $crlf;
-		$req .= "Cache-Control: no-store, no-cache, must-revalidate" . $crlf;
-		$req .= "Cache-Control: post-check=0, pre-check=0" . $crlf;
-		$req .= "Pragma: no-cache" . $crlf;
-		if ($cookies)
-			$req .= 'Cookie: ' . $cookies . $crlf;
-		$req .= "Connection: Close\r\n\r\n";
+		$lf = "\r\n";
+		$req = 'GET ' . $uri . ' HTTP/1.1' . $lf .
+				'Host: ' . $host . ($port ? ':' : '') . $port . $lf .
+				'User-Agent: ' . $this->userAgent . $lf .
+				"Cache-Control: no-store, no-cache, must-revalidate" . $lf .
+				"Cache-Control: post-check=0, pre-check=0" . $lf .
+				"Pragma: no-cache" . $lf .
+				($cookies ? 'Cookie: ' . $cookies . $lf : '') .
+				"Connection: Close" . $lf . $lf;
 
 		fwrite($fp, $req);
 
+		//uncomment for debugging purposes
+		//while(!feof($fp)) echo fgets($fp,128);
 		fclose($fp);
 		return true;
 	}
@@ -438,7 +460,8 @@ class EBackJob extends CApplicationComponent {
 	private function isInternalRequest() {
 		return (isset($_GET['_e_back_job_id']) &&
 				(Yii::app()->request->userHostAddress == '127.0.0.1' ||
-				Yii::app()->request->userHostAddress == '::1')
+				Yii::app()->request->userHostAddress == '::1' ||
+				$_SERVER['SERVER_ADDR'] == $_SERVER['REMOTE_ADDR'])
 				);
 	}
 

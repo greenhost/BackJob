@@ -210,9 +210,21 @@ class EBackJob extends CApplicationComponent {
 	 * Start a new background job. Returns ID of that job.
 	 * @param string|array $route Route to controller/action
 	 * @param boolean Run job as the current user? (Default = true)
+	 * @param integer $timedelay Seconds to postpone 
 	 * @return integer Id of the new job
 	 */
-	public function start($route, $asCurrentUser = true) {
+	public function start($route, $asCurrentUser = true, $timedelay = 0) {
+		if($this->useDb){
+			$existing = $this->database->createCommand()
+								->select('*')
+								->from($this->tableName)
+								->where('request=:request AND start_time > NOW()')
+					->queryRow(true, array(':request' => $route));
+			if($existing){
+				$this->update(array('start_time'=>time()+$timedelay), $existing->id);
+				return $existing->id;
+			}
+		}
 		return $this->runMonitor($route, $asCurrentUser);
 	}
 
@@ -341,7 +353,6 @@ class EBackJob extends CApplicationComponent {
 	private function createStatus($status = array()) {
 		$jobId = false;
 		$status = array_merge($this->getStatus(false), $status);
-		d($status);
 		if ($this->useDb) {
 			$this->database->createCommand()->insert($this->tableName, $status);
 			$jobId = $this->database->lastInsertId;
@@ -394,8 +405,13 @@ class EBackJob extends CApplicationComponent {
 		$jobId = $_GET['_e_back_job_monitor_id'];
 		$job = $this->getStatus($jobId);
 
-		$result = $this->runAction(json_decode($job['request'], true), $jobId);
+		// If the start time is in the future, wait for that time (and re-check again)
+		while($job = $this->getStatus($jobId) && strtotime($job['start_time']) > time()){
+			sleep((strtotime($job['start_time']) - time()));
+		}		
 		
+		$result = $this->runAction(json_decode($job['request'], true), $jobId);
+			
 		if($result !== true){
 			$job = $this->getStatus($jobId);
 			$this->fail(array(

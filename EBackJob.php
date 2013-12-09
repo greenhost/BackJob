@@ -6,7 +6,7 @@
  * @author Siquo
  * @copyright 2013 Greenhost
  * @package backjob
- * @version 0.32
+ * @version 0.31
  * @license New BSD License
  *
  *
@@ -119,9 +119,14 @@ class EBackJob extends CApplicationComponent {
 
 		// We're in a background request? Register events
 		if ($this->isInternalRequest()) {
-			$this->currentJobId = $_GET['_e_back_job_id'];
-			Yii::app()->onBeginRequest = array($this, 'startRequest');
-			Yii::app()->onEndRequest = array($this, 'endRequest');
+			if($this->isMonitorRequest()){
+				$this->currentJobId = $_GET['_e_back_job_monitor_id'];
+				$this->monitor();
+			} else {
+				$this->currentJobId = $_GET['_e_back_job_id'];
+				Yii::app()->onBeginRequest = array($this, 'startRequest');
+				Yii::app()->onEndRequest = array($this, 'endRequest');
+			}
 		}
 		parent::init();
 	}
@@ -185,15 +190,16 @@ class EBackJob extends CApplicationComponent {
 		$ret = array_merge(array(
 				'progress' => 0,
 				'status' => self::STATUS_STARTED,
-				'start_time' => date('Y-m-d h:i:s'),
-				'updated_time' => date('Y-m-d h:i:s'),
+				'start_time' => date('Y-m-d H:i:s'),
+				'updated_time' => date('Y-m-d H:i:s'),
+				'status_text' => ''
 			), $ret);
 
 		// Check for a timeout error
 		if ($jobId && 
 				$ret['status'] < self::STATUS_COMPLETED &&
 				(strtotime($ret['updated_time']) + ($this->errorTimeout)) < time()) {
-			$this->fail(array("status_text"=>"Error: background job timeout"), $jobId);
+			$this->fail(array("status_text"=>$ret['status_text'] . "<br/><strong>Error: job timeout</strong>"), $jobId);
 			$ret = $this->getStatus($jobId);
 		}
 
@@ -207,7 +213,7 @@ class EBackJob extends CApplicationComponent {
 	 * @return integer Id of the new job
 	 */
 	public function start($route, $asCurrentUser = true) {
-		return $this->runAction($route, $asCurrentUser);
+		return $this->runMonitor($route, $asCurrentUser);
 	}
 
 	/**
@@ -225,7 +231,7 @@ class EBackJob extends CApplicationComponent {
 			}
 			$this->setStatus($jobId, array_merge(
 				array(
-					'updated_time' => date('Y-m-d h:i:s'),
+					'updated_time' => date('Y-m-d H:i:s'),
 					'status' => self::STATUS_INPROGRESS,
 					'status_text' => ob_get_contents(),
 				), $status
@@ -246,7 +252,7 @@ class EBackJob extends CApplicationComponent {
 			$this->update(array_merge(
 				array(
 					'progress' => 100,
-					'end_time' => date('Y-m-d h:i:s'),
+					'end_time' => date('Y-m-d H:i:s'),
 					'status' => self::STATUS_COMPLETED,
 				), $status
 			), $jobId);
@@ -263,7 +269,7 @@ class EBackJob extends CApplicationComponent {
 			$jobId = $this->currentJobId;
 		$this->update(array_merge(
 				array(
-					'end_time' => date('Y-m-d h:i:s'),
+					'end_time' => date('Y-m-d H:i:s'),
 					'status' => self::STATUS_FAILED,
 				), $status
 			), $jobId);
@@ -356,7 +362,8 @@ class EBackJob extends CApplicationComponent {
 		$cid = $this->cachePrefix . 'maxid';
 		if (!$this->cache[$cid])
 			$this->cache[$cid] = 0;
-		$this->cache[$cid] = $this->cache[$cid] + 1;
+		while($this->cache[$this->cachePrefix . $this->cache[$cid] ])
+			$this->cache[$cid] = $this->cache[$cid] + 1;
 		return $this->cache[$cid];
 	}
 
@@ -381,45 +388,70 @@ class EBackJob extends CApplicationComponent {
 	}
 
 	/**
-	 * Start a new job and run it in the background
+	 * The monitor thread. Starts a background request and reports on its progress or failure.
+	 */
+	protected function monitor(){
+		$jobId = $_GET['_e_back_job_monitor_id'];
+		$job = $this->getStatus($jobId);
+
+		$result = $this->runAction(json_decode($job['request'], true), $jobId);
+		
+		if($result !== true){
+			$job = $this->getStatus($jobId);
+			$this->fail(array(
+				'status_text'=> $job['status_text'].'<br>'.$result
+			));
+		}
+		$this->finish(); // make sure it's finished if it's not finished or failed already
+		Yii::app()->end;
+	}
+	/**
+	 * Start a new monitor and run it in the background
 	 * @param string|array $request The request (as array or route-string)
 	 * @param boolean Run job as the current user? (Default = true)
 	 * @return string Job-ID: the job id through which the job can be monitored
 	 */
-	protected function runAction($request, $asCurrentUser = true) {
-		$params = array();
-		if (is_array($request)) {
-			$route = $request[0];
-			$params = $request;
-			unset($params[0]);
-		} else {
-			$route = $request;
-			$request = array($route);
+	protected function runMonitor($request, $asCurrentUser = true){
+		if (!is_array($request)) {
+			$request = array($request);
 		}
-
+		list($route, $params) = $this->requestToRoute($request);
 		$jobId = $this->createStatus(array('request' => json_encode($request)));
-		$params['_e_back_job_id'] = $jobId;
-
-		$return = $this->doRequest($route, $params, $asCurrentUser);
-
+		
+		$params['_e_back_job_monitor_id'] = $jobId;
+		
+		$return = $this->doRequest($route, $params, $asCurrentUser, true);
+		
 		if ($return !== true) {
-			$this->finish(array(
-				'status' => self::STATUS_FAILED,
+			$this->fail(array(
 				'status_text' => $return,
-					), $jobId);
+			), $jobId);
 		}
 		return $jobId;
 	}
 
 	/**
-	 * Do an asynchronous request to the specified route
+	 * Start a new job and run it in the foreground (this is run from within the monitor)
+	 * @param string|array $request The request (as array or route-string)
+	 * @param boolean Run job as the current user? (Default = true)
+	 * @return string Job-ID: the job id through which the job can be monitored
+	 */
+	protected function runAction($request, $jobId) {
+		list($route, $params) = $this->requestToRoute($request);
+		$params['_e_back_job_id'] = $jobId;
+
+		return($this->doRequest($route, $params));
+	}
+
+	/**
+	 * Make a request to the specified route
 	 * @param string $route Yii route to the action to run
 	 * @param array $request Optional array of GET parameters
 	 * @param boolean Run job as the current user? (Default = true)
 	 * @return boolean|string Returns either error message or true
 	 */
-	protected function doRequest($route, $request = array(), $asCurrentUser = true) {
-		$uri = Yii::app()->controller->createAbsoluteUrl($route, $request);
+	protected function doRequest($route, $request = array(), $asCurrentUser = true, $async = false) {
+		$uri = Yii::app()->createAbsoluteUrl($route, $request);
 		$uri = '/' . preg_replace('/https?:\/\/(.)*?\//', '', $uri);
 
 		$port = Yii::app()->request->serverPort;
@@ -445,10 +477,14 @@ class EBackJob extends CApplicationComponent {
 				($cookies ? 'Cookie: ' . $cookies . $lf : '') .
 				"Connection: Close" . $lf . $lf;
 
+		// Do the request
 		fwrite($fp, $req);
 
-		//uncomment for debugging purposes
-		//while(!feof($fp)) echo fgets($fp,128);
+		// Echo results if we're not async
+		if(!$async)
+			while(!feof($fp)) echo fgets($fp,128);
+		
+		// Close connection
 		fclose($fp);
 		return true;
 	}
@@ -458,11 +494,27 @@ class EBackJob extends CApplicationComponent {
 	 * @return type
 	 */
 	private function isInternalRequest() {
-		return (isset($_GET['_e_back_job_id']) &&
+		return ((isset($_GET['_e_back_job_id']) || isset($_GET['_e_back_job_monitor_id'])) &&
 				(Yii::app()->request->userHostAddress == '127.0.0.1' ||
 				Yii::app()->request->userHostAddress == '::1' ||
 				$_SERVER['SERVER_ADDR'] == $_SERVER['REMOTE_ADDR'])
 				);
 	}
 
+	private function isMonitorRequest() {
+		return isset($_GET['_e_back_job_monitor_id']);
+	}
+	
+	private function requestToRoute($request){
+		$params = array();
+		if (is_array($request)) {
+			$route = $request[0];
+			$params = $request;
+			unset($params[0]);
+		} else {
+			$route = $request;
+			$request = array($route);
+		}
+		return array($route, $params);
+	}
 }

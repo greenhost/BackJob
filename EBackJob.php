@@ -6,7 +6,7 @@
  * @author Siquo
  * @copyright 2013 Greenhost
  * @package backjob
- * @version 0.31
+ * @version 0.41
  * @license New BSD License
  *
  *
@@ -218,8 +218,8 @@ class EBackJob extends CApplicationComponent {
 			$existing = $this->database->createCommand()
 								->select('*')
 								->from($this->tableName)
-								->where('request=:request AND start_time > NOW()')
-					->queryRow(true, array(':request' => $route));
+								->where('request=:request AND start_time > NOW() AND status=0')
+					->queryRow(true, array(':request' => json_encode($route)));
 			if($existing){
 				$this->update(array('start_time'=>time()+$timedelay), $existing->id);
 				return $existing->id;
@@ -402,23 +402,26 @@ class EBackJob extends CApplicationComponent {
 	 * The monitor thread. Starts a background request and reports on its progress or failure.
 	 */
 	protected function monitor(){
-		$jobId = $_GET['_e_back_job_monitor_id'];
+		$jobId = $this->currentJobId;
+		$job = null;
 		$job = $this->getStatus($jobId);
-
 		// If the start time is in the future, wait for that time (and re-check again)
-		while($job = $this->getStatus($jobId) && strtotime($job['start_time']) > time()){
+		while(($job = $this->getStatus($jobId)) && strtotime($job['start_time']) > time()){
 			sleep((strtotime($job['start_time']) - time()));
-		}		
-		
-		$result = $this->runAction(json_decode($job['request'], true), $jobId);
-			
-		if($result !== true){
-			$job = $this->getStatus($jobId);
-			$this->fail(array(
-				'status_text'=> $job['status_text'].'<br>'.$result
-			));
 		}
-		$this->finish(); // make sure it's finished if it's not finished or failed already
+		if($job['request']){
+			$result = $this->runAction(json_decode($job['request'], true), $jobId);
+
+			if($result !== true){
+				$job = $this->getStatus($jobId);
+				$this->fail(array(
+					'status_text'=> $job['status_text'].'<br>'.$result
+				));
+			}
+			$this->finish(); // make sure it's finished if it's not finished or failed already
+		} else {
+			$this->fail(array('status_text' => 'Error: Request not found'.$jobId.var_export($job, true)));
+		}
 		Yii::app()->end;
 	}
 	/**
@@ -521,6 +524,11 @@ class EBackJob extends CApplicationComponent {
 		return isset($_GET['_e_back_job_monitor_id']);
 	}
 	
+	/**
+	 * Transform a request to a route and a parameter array
+	 * @param type $request
+	 * @return type
+	 */
 	private function requestToRoute($request){
 		$params = array();
 		if (is_array($request)) {

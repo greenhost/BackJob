@@ -135,6 +135,7 @@ class testController extends Controller {
 ~~~
 
 ##Changelog
+- 0.42 - Few bugfixes: creation of table, cache was unuseable, a typo
 - 0.41 - Small bugfix
 - 0.40 - Added monitoring thread that waits for the job to end, so requests that end prematurely still finish. Also, you can specify a number of seconds to wait until processing, and multiple requests with the exact same route will be merged together into one request.
 - 0.33 - Https support, better self-recognition, added request field (update your database table!), added global timeout.

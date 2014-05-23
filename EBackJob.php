@@ -6,12 +6,12 @@
  * @author Siquo
  * @copyright 2013 Greenhost
  * @package backjob
- * @version 0.41
+ * @version 0.42
  * @license New BSD License
  *
  *
  *
- * Copyright (c) 2013, Greenhost
+ * Copyright (c) 2014, Greenhost
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -24,7 +24,7 @@
  * this list of conditions and the following disclaimer in the documentation and/or
  * other materials provided with the distribution.
  *
- * 3. Neither the name of the Greenhost nor the names of its contributors may be
+ * 3. Neither the name of Greenhost nor the names of its contributors may be
  * used to endorse or promote products derived from this software without specific
  * prior written permission.
  *
@@ -360,7 +360,7 @@ class EBackJob extends CApplicationComponent {
 		if ($this->useCache) {
 			if (!$jobId)
 				$jobId = $this->getNewCacheId();
-			$this->cache[$this->cachePrefix . $jobId] = $status;
+			$this->setCacheStatus($jobId, $status);
 		}
 		return $jobId;
 	}
@@ -388,7 +388,7 @@ class EBackJob extends CApplicationComponent {
 					'id' => 'pk',
 					'progress' => 'integer',
 					'status' => 'integer',
-					'start_time' => 'timestamp',
+					'start_time' => 'timestamp DEFAULT CURRENT_TIMESTAMP ',
 					'updated_time' => 'timestamp',
 					'end_time' => 'timestamp',
 					'request' => 'text',
@@ -422,7 +422,7 @@ class EBackJob extends CApplicationComponent {
 		} else {
 			$this->fail(array('status_text' => 'Error: Request not found'.$jobId.var_export($job, true)));
 		}
-		Yii::app()->end;
+		Yii::app()->end();
 	}
 	/**
 	 * Start a new monitor and run it in the background

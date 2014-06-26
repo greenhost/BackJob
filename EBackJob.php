@@ -560,9 +560,7 @@ class EBackJob extends CApplicationComponent {
 	/**
 	 * Clear old database entries that have completed to limit the amount of backlog
 	 */
-	private function cleanDb(){
-		Yii::log("Cleaning Backjob DB",  CLogger::LEVEL_ERROR);
-		
+	private function cleanDb(){		
 		if($this->useDb && $this->backlogDays){
 			$this->database->createCommand()->delete($this->tableName, 
 				'end_time < DATE_SUB(NOW(), INTERVAL :history DAY) AND status = :status', 
@@ -578,6 +576,5 @@ class EBackJob extends CApplicationComponent {
 					':history' => $this->backlogDays
 				));
 		}
-		Yii::log("Cleaned Backjob DB",  CLogger::LEVEL_ERROR);
 	}
 }

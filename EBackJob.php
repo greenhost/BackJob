@@ -100,6 +100,17 @@ class EBackJob extends CApplicationComponent {
 	 * @var integer
 	 */
 	public $errorTimeout = 60;
+	
+	/**
+	 * Number of days we keep a backlog of database entries of succesfully completed requests. Set to 0 to disable cleanup entirely
+	 * @var integer
+	 */
+	public $backlogDays = 30;
+	/**
+	 * Number of days we keep a backlog of database entries of all requests. Set to 0 to disable cleanup entirely
+	 * @var integer
+	 */
+	public $allBacklogDays = 60;
 
 	/**
 	 * If we're inside a jobrequest, this is the current ID
@@ -128,6 +139,7 @@ class EBackJob extends CApplicationComponent {
 				Yii::app()->onEndRequest = array($this, 'endRequest');
 			}
 		}
+
 		parent::init();
 	}
 
@@ -158,7 +170,7 @@ class EBackJob extends CApplicationComponent {
 			$this->finish(array(
 				'status_text' => $content
 			));
-		}
+		}		
 	}
 
 	/**
@@ -269,6 +281,7 @@ class EBackJob extends CApplicationComponent {
 				), $status
 			), $jobId);
 		}
+		$this->cleanDb(); // cleanup of Old items		
 	}
 
 	/**
@@ -409,6 +422,7 @@ class EBackJob extends CApplicationComponent {
 		while(($job = $this->getStatus($jobId)) && strtotime($job['start_time']) > time()){
 			sleep((strtotime($job['start_time']) - time()));
 		}
+
 		if($job['request']){
 			$result = $this->runAction(json_decode($job['request'], true), $jobId);
 
@@ -422,6 +436,7 @@ class EBackJob extends CApplicationComponent {
 		} else {
 			$this->fail(array('status_text' => 'Error: Request not found'.$jobId.var_export($job, true)));
 		}
+		
 		Yii::app()->end();
 	}
 	/**
@@ -540,5 +555,29 @@ class EBackJob extends CApplicationComponent {
 			$request = array($route);
 		}
 		return array($route, $params);
+	}
+	
+	/**
+	 * Clear old database entries that have completed to limit the amount of backlog
+	 */
+	private function cleanDb(){
+		Yii::log("Cleaning Backjob DB",  CLogger::LEVEL_ERROR);
+		
+		if($this->useDb && $this->backlogDays){
+			$this->database->createCommand()->delete($this->tableName, 
+				'end_time < DATE_SUB(NOW(), INTERVAL :history DAY) AND status = :status', 
+				array(
+					':history' => $this->backlogDays,
+					':status' => self::STATUS_COMPLETED,
+				));		
+		}
+		if($this->useDb && $this->allBacklogDays){
+			$this->database->createCommand()->delete($this->tableName, 
+				'end_time < DATE_SUB(NOW(), INTERVAL :history DAY)', 
+				array(
+					':history' => $this->backlogDays
+				));
+		}
+		Yii::log("Cleaned Backjob DB",  CLogger::LEVEL_ERROR);
 	}
 }

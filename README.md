@@ -35,7 +35,9 @@ Configuration:
 		'tableName' => 'e_background_job', // Name of DB table used
 		'cachePrefix' => 'EBackJobPrefix-',  // Prefix used in the cache
 		'errorTimeout' => 60, // Nr of seconds after which ALL requests time out, measured from the last update.
-		'userAgent' => 'Mozilla/5.0 Firefox/3.6.12' // Useragent used for the background request
+		'userAgent' => 'Mozilla/5.0 Firefox/3.6.12', // Useragent used for the background request
+		'backlogDays' => 30, // Number of days successfully completed request-entries are retained in the database
+		'allBacklogDays' => 60, // Number of days ALL entries (including failed) are retained in the database
 	),
 ),
 ~~~
@@ -135,6 +137,7 @@ class testController extends Controller {
 ~~~
 
 ##Changelog
+- 0.43 - Added backlog-cleanup for the database, so that it won't fill up with completed requests. Keep in mind that there are two different time-scales, one for successfully finished jobs, and one for all jobs including failed ones. Setting these to 0 days will stop cleanup entirely, this might lead to an ever-expanding database! Thanks to Arno S for noticing this omission.
 - 0.42 - Few bugfixes: creation of table, cache was unuseable, a typo
 - 0.41 - Small bugfix
 - 0.40 - Added monitoring thread that waits for the job to end, so requests that end prematurely still finish. Also, you can specify a number of seconds to wait until processing, and multiple requests with the exact same route will be merged together into one request.

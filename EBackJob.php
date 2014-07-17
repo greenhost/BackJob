@@ -130,6 +130,7 @@ class EBackJob extends CApplicationComponent {
 
 		// We're in a background request? Register events
 		if ($this->isInternalRequest()) {
+			set_time_limit($this->errorTimeout + 5);
 			if($this->isMonitorRequest()){
 				$this->currentJobId = $_GET['_e_back_job_monitor_id'];
 				$this->monitor();
@@ -325,7 +326,7 @@ class EBackJob extends CApplicationComponent {
 		return $this->_db;
 	}
 
-	/**
+	/**m
 	 * Get Cache that was configured
 	 * @return CCache
 	 */
@@ -415,6 +416,7 @@ class EBackJob extends CApplicationComponent {
 	 * The monitor thread. Starts a background request and reports on its progress or failure.
 	 */
 	protected function monitor(){
+		set_time_limit($this->errorTimeout + 5);
 		$jobId = $this->currentJobId;
 		$job = null;
 		$job = $this->getStatus($jobId);

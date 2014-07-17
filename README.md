@@ -4,9 +4,9 @@ For running jobs at remote locations, fire-and-forget jobs, interval/cron jobs, 
 
 ##Requirements
 
-Works with Yii-1.1.14. Needs to be able to use fsockopen and fwrite to itself.
+Works with Yii-1.1.14 and up. Needs to be able to use fsockopen and fwrite to itself.
 
-**Important:** If you want to run background jobs as the current user (which is the default option), you must use some kind of non-blocking session storage, such as CHttpDbSession.
+**Important:** If you want to run background jobs as the current user (which is the default option), you must use some kind of non-blocking session storage, such as CHttpDbSession. Also make sure that user is authorised to access that action.
 
 
 ##Installation
@@ -137,6 +137,7 @@ class testController extends Controller {
 ~~~
 
 ##Changelog
+- 0.44 - The timeout-setting now also affects the php-timeout setting with `set_time_limit`, thanks to martijnjonkers.
 - 0.43 - Added backlog-cleanup for the database, so that it won't fill up with completed requests. Keep in mind that there are two different time-scales, one for successfully finished jobs, and one for all jobs including failed ones. Setting these to 0 days will stop cleanup entirely, this might lead to an ever-expanding database! Thanks to Arno S for noticing this omission.
 - 0.42 - Few bugfixes: creation of table, cache was unuseable, a typo
 - 0.41 - Small bugfix

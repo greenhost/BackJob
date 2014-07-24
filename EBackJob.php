@@ -501,7 +501,14 @@ class EBackJob extends CApplicationComponent {
 		$cookies = '';
 		if ($asCurrentUser)
 			foreach (Yii::app()->request->cookies as $k => $v)
+			{
+				if (Yii::app()->request->enableCookieValidation)
+					$v = Yii::app()->getSecurityManager()->hashData(serialize($v));
 				$cookies .= urlencode($k) . '=' . urlencode($v) . '; ';
+			}
+			
+		if (Yii::app()->request->enableCookieValidation)
+			$cookies .= urlencode('PHPSESSID') . '=' . urlencode(Yii::app()->session-sessionID) . '; ';
 
 		$lf = "\r\n";
 		$req = 'GET ' . $uri . ' HTTP/1.1' . $lf .

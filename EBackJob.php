@@ -4,9 +4,9 @@
  * Tracking Background Jobs
  *
  * @author Siquo
- * @copyright 2013 Greenhost
+ * @copyright 2014 Greenhost
  * @package backjob
- * @version 0.42
+ * @version 0.45
  * @license New BSD License
  *
  *
@@ -135,7 +135,7 @@ class EBackJob extends CApplicationComponent {
 				$this->currentJobId = $_GET['_e_back_job_monitor_id'];
 				$this->monitor();
 			} else {
-				$this->currentJobId = $_GET['_e_back_job_id'];
+				$this->currentJobId = $_REQUEST['_e_back_job_id'];
 				Yii::app()->onBeginRequest = array($this, 'startRequest');
 				Yii::app()->onEndRequest = array($this, 'endRequest');
 			}
@@ -146,7 +146,7 @@ class EBackJob extends CApplicationComponent {
 
 	/**
 	 * Callback function at the start of a background request
-	 * @param type $event
+	 * @param CEvent $event
 	 */
 	public function startRequest($event) {
 		ignore_user_abort(true);
@@ -159,7 +159,7 @@ class EBackJob extends CApplicationComponent {
 
 	/**
 	 * Callback function at the end of a background request
-	 * @param type $event
+	 * @param CEvent $event
 	 */
 	public function endRequest($event) {
 		$content = ob_get_clean();
@@ -250,6 +250,7 @@ class EBackJob extends CApplicationComponent {
 		if (!$jobId)
 			$jobId = $this->currentJobId;
 
+		Yii::trace("Updating status " .$jobId.var_export($status,true), "application.EBackJob");
 		if ($jobId) {
 			if (!is_array($status)) {
 				$status = array('progress' => $status);
@@ -416,12 +417,12 @@ class EBackJob extends CApplicationComponent {
 	 * The monitor thread. Starts a background request and reports on its progress or failure.
 	 */
 	protected function monitor(){
-		set_time_limit($this->errorTimeout + 5);
 		$jobId = $this->currentJobId;
-		$job = null;
 		$job = $this->getStatus($jobId);
+		
 		// If the start time is in the future, wait for that time (and re-check again)
 		while(($job = $this->getStatus($jobId)) && strtotime($job['start_time']) > time()){
+                        set_time_limit($this->errorTimeout + (strtotime($job['start_time']) - time()) + 5);
 			sleep((strtotime($job['start_time']) - time()));
 		}
 
@@ -482,14 +483,27 @@ class EBackJob extends CApplicationComponent {
 	/**
 	 * Make a request to the specified route
 	 * @param string $route Yii route to the action to run
-	 * @param array $request Optional array of GET parameters
+	 * @param array $request Optional array of GET/POST parameters
 	 * @param boolean Run job as the current user? (Default = true)
 	 * @return boolean|string Returns either error message or true
 	 */
 	protected function doRequest($route, $request = array(), $asCurrentUser = true, $async = false) {
+		$method = isset($request['backjobMethod']) ? $request['backjobMethod'] : 'GET';
+		
+		if($this->isMonitorRequest()){
+			$postdata = file_get_contents("php://input");
+			unset($request['backjobMethod']);
+		} elseif(isset($request['backjobPostdata'])) {			
+			$postdata = http_build_query($request['backjobPostdata']);
+			unset($request['backjobPostdata']);
+		} else {
+			$postdata = '';
+		}
+		
 		$uri = Yii::app()->createAbsoluteUrl($route, $request);
 		$uri = '/' . preg_replace('/https?:\/\/(.)*?\//', '', $uri);
-
+		
+		
 		$port = Yii::app()->request->serverPort;
 		$host = Yii::app()->request->serverName;
 
@@ -504,15 +518,24 @@ class EBackJob extends CApplicationComponent {
 				$cookies .= urlencode($k) . '=' . urlencode($v) . '; ';
 
 		$lf = "\r\n";
-		$req = 'GET ' . $uri . ' HTTP/1.1' . $lf .
+		$req = $method . ' ' . $uri . ' HTTP/1.1' . $lf .
 				'Host: ' . $host . ($port ? ':' : '') . $port . $lf .
 				'User-Agent: ' . $this->userAgent . $lf .
-				"Cache-Control: no-store, no-cache, must-revalidate" . $lf .
-				"Cache-Control: post-check=0, pre-check=0" . $lf .
-				"Pragma: no-cache" . $lf .
-				($cookies ? 'Cookie: ' . $cookies . $lf : '') .
-				"Connection: Close" . $lf . $lf;
+				'Cache-Control: no-store, no-cache, must-revalidate' . $lf .
+				'Cache-Control: post-check=0, pre-check=0' . $lf .
+				'Pragma: no-cache' . $lf .
+				($cookies ? 'Cookie: ' . $cookies . $lf : '') ;
 
+		if($postdata){
+			$req .= 'Content-Type: application/x-www-form-urlencoded' . $lf .
+					'Content-Length: ' . strlen($postdata) . $lf .
+					'Connection: Close' . $lf . $lf .
+					$postdata;
+		} else {
+			$req .= 'Connection: Close' . $lf . $lf;
+		}
+		
+		Yii::trace("Running background request: " .$req, "application.EBackJob");
 		// Do the request
 		fwrite($fp, $req);
 
@@ -530,13 +553,17 @@ class EBackJob extends CApplicationComponent {
 	 * @return type
 	 */
 	private function isInternalRequest() {
-		return ((isset($_GET['_e_back_job_id']) || isset($_GET['_e_back_job_monitor_id'])) &&
+		return ((isset($_REQUEST['_e_back_job_id']) || $this->isMonitorRequest()) &&
 				(Yii::app()->request->userHostAddress == '127.0.0.1' ||
 				Yii::app()->request->userHostAddress == '::1' ||
 				$_SERVER['SERVER_ADDR'] == $_SERVER['REMOTE_ADDR'])
 				);
 	}
 
+	/**
+	 * Check if we're a monitor-thread
+	 * @return boolean
+	 */
 	private function isMonitorRequest() {
 		return isset($_GET['_e_back_job_monitor_id']);
 	}

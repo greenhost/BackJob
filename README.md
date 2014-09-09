@@ -6,7 +6,7 @@ For running jobs at remote locations, fire-and-forget jobs, interval/cron jobs, 
 
 Works with Yii-1.1.14 and up. Needs to be able to use fsockopen and fwrite to itself.
 
-**Important:** If you want to run background jobs as the current user (which is the default option), you must use some kind of non-blocking session storage, such as CHttpDbSession. Also make sure that user is authorised to access that action.
+**Important:** If you want to run background jobs as the current user (which is the default option), you must use some kind of non-blocking session storage, such as CDbHttpSession. Also make sure that user is authorised to access that action.
 
 
 ##Installation
@@ -101,6 +101,15 @@ Yii::app()->background->update(array('progress'=>60,'status_text'=>'Chugging alo
 Yii::app()->background->finish(array('status_text'=>'And done');
 ~~~
 
+##POST and other methods
+
+Any HTTP1.1 method can be used (POST, PUT, DELETE, CHICKEN), and it can send both "GET" data in the url and url-encoded data in the body (sorry, no multipart/file support, you can bypass that by passing temporary filenames). These can be set in the request array using the keys `backjobMethod` and `backjobPostdata` respectively. Yes, this means that you can't use your own fields called `backjobMethod` and `backjobPostdata`, but this was the best way to add this while maintaining backwards compatibility.
+
+Example: To make a POST call with `$\_POST` values for `id` and `name` and a `$\_GET` value for `page` do:
+~~~
+[php]
+Yii::app()->background->start(array('test/testbackground', 'page'=>1, 'backjobMethod'=>'POST', 'backjobPostdata'=>array('id'=>5, 'name'=>'Name')));
+~~~
 
 ##Complete example
 ~~~
@@ -137,6 +146,7 @@ class testController extends Controller {
 ~~~
 
 ##Changelog
+- 0.45 - Added support for other HTTP methods and POST-data.
 - 0.44 - The timeout-setting now also affects the php-timeout setting with `set_time_limit`, thanks to martijnjonkers.
 - 0.43 - Added backlog-cleanup for the database, so that it won't fill up with completed requests. Keep in mind that there are two different time-scales, one for successfully finished jobs, and one for all jobs including failed ones. Setting these to 0 days will stop cleanup entirely, this might lead to an ever-expanding database! Thanks to Arno S for noticing this omission.
 - 0.42 - Few bugfixes: creation of table, cache was unuseable, a typo

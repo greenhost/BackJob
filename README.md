@@ -13,8 +13,7 @@ Works with Yii-1.1.14 and up. Needs to be able to use fsockopen and fwrite to it
 Put the source from the zip archive in `protected/extensions` or from [https://github.com/greenhost/BackJob](https://github.com/greenhost/BackJob "Backjob Github Repo") in `protected/extensions/backjob`.
 
 Configuration:
-~~~
-[php]
+~~~php
 // Yes, it needs preloads, but it's not resource-heavy (promise!)
 'preload' => array(
 	'background'
@@ -47,8 +46,7 @@ Configuration:
 It's possible to start any controllers' action that is reachable through a url, but recommended to have dedicated actions to be run in the background. You'll have to make your own progress reports, otherwise progress will just jump from 0 to 100.
 
 Starting a background job only requires a valid route to that controller/action.
-~~~
-[php]
+~~~php
 $jobId = Yii::app()->background->start('site/longJob');
 // Or, with parameters:
 $jobWithParams = Yii::app()->background->start(
@@ -62,8 +60,7 @@ $jobWithParams = Yii::app()->background->start(
 
 Then you'll probably want to use a time-intervaled ajax request to get the progress.
 Getting the status of a specific job. This returns an array of the form:
-~~~
-[php]
+~~~php
 $status = Yii::app()->background->getStatus($jobId);
 //This returns an array that looks something like this:
 array(
@@ -77,8 +74,7 @@ array(
 ~~~
 
 During the background job, the action that actually runs the job itself can update its progress both by echoing and setting the progress counter:
-~~~
-[php]
+~~~php
 echo "Starting 1<br/>";
 Yii::app()->background->update(20);
 do_long_function1();
@@ -95,8 +91,7 @@ echo "Done<br/>";
 ~~~
 
 If you don't want a list or log of echoed text, but replace it, you can use the update function like this, but make sure that you also finish manually.
-~~~
-[php]
+~~~php
 Yii::app()->background->update(array('progress'=>60,'status_text'=>'Chugging along now');
 Yii::app()->background->finish(array('status_text'=>'And done');
 ~~~
@@ -106,14 +101,12 @@ Yii::app()->background->finish(array('status_text'=>'And done');
 Any HTTP1.1 method can be used (POST, PUT, DELETE, CHICKEN), and it can send both "GET" data in the url and url-encoded data in the body (sorry, no multipart/file support, you can bypass that by passing temporary filenames). These can be set in the request array using the keys `backjobMethod` and `backjobPostdata` respectively. Yes, this means that you can't use your own fields called `backjobMethod` and `backjobPostdata`, but this was the best way to add this while maintaining backwards compatibility.
 
 Example: To make a POST call with `$\_POST` values for `id` and `name` and a `$\_GET` value for `page` do:
-~~~
-[php]
+~~~php
 Yii::app()->background->start(array('test/testbackground', 'page'=>1, 'backjobMethod'=>'POST', 'backjobPostdata'=>array('id'=>5, 'name'=>'Name')));
 ~~~
 
 ##Complete example
-~~~
-[php]
+~~~php
 class testController extends Controller {
 
 	public function actionProgressMonitor(){

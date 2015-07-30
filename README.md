@@ -28,6 +28,7 @@ Configuration:
 		// All other configuration options are optional:
 
 		'checkAndCreateTable' => true,  // creates table if it doesn't exist
+		'key' => 'sjs&sk&F89fksL*987sdKf' // Random string used to salt the hash used for background-thread-authentication. Optional to change, but you really should.
 		'useDb' => true,    // Use a database table
 		'useCache' => true, // Use the cache
 		'db' => 'db',    // Database component name to use
@@ -146,6 +147,7 @@ class testController extends Controller {
 ~~~
 
 ##Changelog
+- 0.50 - Changed the way internal requests are recognised, they are now checked by parameters instead of from-headers, should work nicer with proxied servers, and be more resilient against spoofing. Change the `key` field in configuration!
 - 0.45 - Added support for other HTTP methods and POST-data.
 - 0.44 - The timeout-setting now also affects the php-timeout setting with `set_time_limit`, thanks to martijnjonkers.
 - 0.43 - Added backlog-cleanup for the database, so that it won't fill up with completed requests. Keep in mind that there are two different time-scales, one for successfully finished jobs, and one for all jobs including failed ones. Setting these to 0 days will stop cleanup entirely, this might lead to an ever-expanding database! Thanks to Arno S for noticing this omission.

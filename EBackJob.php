@@ -99,13 +99,14 @@ class EBackJob extends CApplicationComponent {
 	 * Number of seconds after which an error-timeout occurs.
 	 * @var integer
 	 */
-	public $errorTimeout = 60;
-	
+	public $errorTimeout = 120;
+
 	/**
 	 * Number of days we keep a backlog of database entries of succesfully completed requests. Set to 0 to disable cleanup entirely
 	 * @var integer
 	 */
 	public $backlogDays = 30;
+
 	/**
 	 * Number of days we keep a backlog of database entries of all requests. Set to 0 to disable cleanup entirely
 	 * @var integer
@@ -117,6 +118,13 @@ class EBackJob extends CApplicationComponent {
 	 * @var integer
 	 */
 	public $currentJobId;
+	
+	/**
+	 * Unique key for your application
+	 * @var string 
+	 */
+	public $key = 'sjs&sk&F89fksL*987sdKf';
+	
 	private $_db;
 	private $_ch;
 
@@ -131,7 +139,7 @@ class EBackJob extends CApplicationComponent {
 		// We're in a background request? Register events
 		if ($this->isInternalRequest()) {
 			set_time_limit($this->errorTimeout + 5);
-			if($this->isMonitorRequest()){
+			if ($this->isMonitorRequest()) {
 				$this->currentJobId = $_GET['_e_back_job_monitor_id'];
 				$this->monitor();
 			} else {
@@ -171,7 +179,7 @@ class EBackJob extends CApplicationComponent {
 			$this->finish(array(
 				'status_text' => $content
 			));
-		}		
+		}
 	}
 
 	/**
@@ -198,21 +206,22 @@ class EBackJob extends CApplicationComponent {
 		if (!is_array($ret)) {
 			$ret = array();
 		}
-		
+
 		// also set defaults
 		$ret = array_merge(array(
-				'progress' => 0,
-				'status' => self::STATUS_STARTED,
-				'start_time' => date('Y-m-d H:i:s'),
-				'updated_time' => date('Y-m-d H:i:s'),
-				'status_text' => ''
-			), $ret);
+			'progress' => 0,
+			'status' => self::STATUS_STARTED,
+			'start_time' => date('Y-m-d H:i:s'),
+			'updated_time' => date('Y-m-d H:i:s'),
+			'status_text' => '',
+			'request' => ''
+		), $ret);
 
 		// Check for a timeout error
-		if ($jobId && 
+		if ($jobId &&
 				$ret['status'] < self::STATUS_COMPLETED &&
 				(strtotime($ret['updated_time']) + ($this->errorTimeout)) < time()) {
-			$this->fail(array("status_text"=>$ret['status_text'] . "<br/><strong>Error: job timeout</strong>"), $jobId);
+			$this->fail(array("status_text" => $ret['status_text'] . "<br/><strong>Error: job timeout</strong>"), $jobId);
 			$ret = $this->getStatus($jobId);
 		}
 
@@ -227,42 +236,44 @@ class EBackJob extends CApplicationComponent {
 	 * @return integer Id of the new job
 	 */
 	public function start($route, $asCurrentUser = true, $timedelay = 0) {
-		if($this->useDb){
-			$existing = $this->database->createCommand()
-								->select('*')
-								->from($this->tableName)
-								->where('request=:request AND start_time > NOW() AND status=0')
-					->queryRow(true, array(':request' => json_encode($route)));
-			if($existing){
-				$this->update(array('start_time'=>time()+$timedelay), $existing->id);
-				return $existing->id;
-			}
-		}
 		return $this->runMonitor($route, $asCurrentUser);
 	}
 
 	/**
 	 * Update a job's status. Either provide a status array or a progress percentage
-	 * @param integer $jobId
 	 * @param array|integer $status
+	 * @param integer $jobId
 	 */
 	public function update($status = array(), $jobId = false) {
+
 		if (!$jobId)
 			$jobId = $this->currentJobId;
 
-		Yii::trace("Updating status " .$jobId.var_export($status,true), "application.EBackJob");
+		Yii::trace("Updating status for job: " . $jobId . " args: " . var_export($status, true), "application.EBackJob");
 		if ($jobId) {
 			if (!is_array($status)) {
 				$status = array('progress' => $status);
 			}
 			$this->setStatus($jobId, array_merge(
-				array(
-					'updated_time' => date('Y-m-d H:i:s'),
-					'status' => self::STATUS_INPROGRESS,
-					'status_text' => ob_get_contents(),
-				), $status
+							array(
+				'updated_time' => date('Y-m-d H:i:s'),
+				'status' => self::STATUS_INPROGRESS,
+				'status_text' => ob_get_contents(),
+							), $status
 			));
 		}
+	}
+
+	/**
+	 * Update a job's status by incrementing the status by $amount
+	 * @param array|integer $status
+	 * @param integer $jobId
+	 */
+	public function updateIncrement($amount, $jobId = false) {
+		if (!$jobId)
+			$jobId = $this->currentJobId;
+		$st = $this->getStatus($jobId);
+		$this->update($amount + $st['progress']);
 	}
 
 	/**
@@ -276,12 +287,12 @@ class EBackJob extends CApplicationComponent {
 		$job = $this->getStatus($jobId);
 		if ($job['status'] < self::STATUS_COMPLETED) {
 			$this->update(array_merge(
-				array(
-					'progress' => 100,
-					'end_time' => date('Y-m-d H:i:s'),
-					'status' => self::STATUS_COMPLETED,
-				), $status
-			), $jobId);
+							array(
+				'progress' => 100,
+				'end_time' => date('Y-m-d H:i:s'),
+				'status' => self::STATUS_COMPLETED,
+							), $status
+					), $jobId);
 		}
 		$this->cleanDb(); // cleanup of Old items		
 	}
@@ -292,14 +303,16 @@ class EBackJob extends CApplicationComponent {
 	 * @param array $status
 	 */
 	public function fail($status = array(), $jobId = false) {
+		if (is_string($status))
+			$status = array('status_text' => $status);
 		if (!$jobId)
 			$jobId = $this->currentJobId;
 		$this->update(array_merge(
-				array(
-					'end_time' => date('Y-m-d H:i:s'),
-					'status' => self::STATUS_FAILED,
-				), $status
-			), $jobId);
+						array(
+							'end_time' => date('Y-m-d H:i:s'),
+							'status' => self::STATUS_FAILED,
+						), $status
+				), $jobId);
 		Yii::app()->end();
 	}
 
@@ -327,10 +340,11 @@ class EBackJob extends CApplicationComponent {
 		return $this->_db;
 	}
 
-	/**m
+	/**
 	 * Get Cache that was configured
 	 * @return CCache
 	 */
+
 	public function getCache() {
 		if (!isset($this->_ch)) {
 			$cache = $this->ch;
@@ -388,7 +402,7 @@ class EBackJob extends CApplicationComponent {
 		$cid = $this->cachePrefix . 'maxid';
 		if (!$this->cache[$cid])
 			$this->cache[$cid] = 0;
-		while($this->cache[$this->cachePrefix . $this->cache[$cid] ])
+		while ($this->cache[$this->cachePrefix . $this->cache[$cid]])
 			$this->cache[$cid] = $this->cache[$cid] + 1;
 		return $this->cache[$cid];
 	}
@@ -398,71 +412,73 @@ class EBackJob extends CApplicationComponent {
 	 */
 	private function createTable() {
 		$this->database->createCommand(
-			$this->database->schema->createTable(
-				$this->tableName, array(
-					'id' => 'pk',
-					'progress' => 'integer',
-					'status' => 'integer',
-					'start_time' => 'timestamp DEFAULT CURRENT_TIMESTAMP ',
-					'updated_time' => 'timestamp',
-					'end_time' => 'timestamp',
-					'request' => 'text',
-					'status_text' => 'text',
+				$this->database->schema->createTable(
+						$this->tableName, array(
+							'id' => 'pk',
+							'progress' => 'integer',
+							'status' => 'integer',
+							'start_time' => 'timestamp DEFAULT CURRENT_TIMESTAMP ',
+							'updated_time' => 'timestamp',
+							'end_time' => 'timestamp',
+							'request' => 'text',
+							'status_text' => 'text',
+						)
 				)
-			)
 		)->execute();
 	}
 
 	/**
 	 * The monitor thread. Starts a background request and reports on its progress or failure.
 	 */
-	protected function monitor(){
+	protected function monitor() {
 		$jobId = $this->currentJobId;
 		$job = $this->getStatus($jobId);
-		
+
 		// If the start time is in the future, wait for that time (and re-check again)
-		while(($job = $this->getStatus($jobId)) && strtotime($job['start_time']) > time()){
-                        set_time_limit($this->errorTimeout + (strtotime($job['start_time']) - time()) + 5);
+		while (($job = $this->getStatus($jobId)) && strtotime($job['start_time']) > time()) {
+			set_time_limit($this->errorTimeout + (strtotime($job['start_time']) - time()) + 5);
 			sleep((strtotime($job['start_time']) - time()));
 		}
 
-		if($job['request']){
+		if ($job['request']) {
 			$result = $this->runAction(json_decode($job['request'], true), $jobId);
 
-			if($result !== true){
+			if ($result !== true) {
 				$job = $this->getStatus($jobId);
 				$this->fail(array(
-					'status_text'=> $job['status_text'].'<br>'.$result
+					'status_text' => $job['status_text'] . '<br>' . $result
 				));
 			}
 			$this->finish(); // make sure it's finished if it's not finished or failed already
 		} else {
-			$this->fail(array('status_text' => 'Error: Request not found'.$jobId.var_export($job, true)));
+			$this->fail(array('status_text' => 'Error: Request not found' . $jobId . var_export($job, true)));
 		}
-		
+
 		Yii::app()->end();
 	}
+
 	/**
 	 * Start a new monitor and run it in the background
 	 * @param string|array $request The request (as array or route-string)
 	 * @param boolean Run job as the current user? (Default = true)
 	 * @return string Job-ID: the job id through which the job can be monitored
 	 */
-	protected function runMonitor($request, $asCurrentUser = true){
+	protected function runMonitor($request, $asCurrentUser = true) {
 		if (!is_array($request)) {
 			$request = array($request);
 		}
 		list($route, $params) = $this->requestToRoute($request);
 		$jobId = $this->createStatus(array('request' => json_encode($request)));
-		
+
 		$params['_e_back_job_monitor_id'] = $jobId;
-		
+		$params['_e_back_job_id'] = $jobId;
+
 		$return = $this->doRequest($route, $params, $asCurrentUser, true);
-		
+
 		if ($return !== true) {
 			$this->fail(array(
 				'status_text' => $return,
-			), $jobId);
+					), $jobId);
 		}
 		return $jobId;
 	}
@@ -489,28 +505,33 @@ class EBackJob extends CApplicationComponent {
 	 */
 	protected function doRequest($route, $request = array(), $asCurrentUser = true, $async = false) {
 		$method = isset($request['backjobMethod']) ? $request['backjobMethod'] : 'GET';
-		
-		if($this->isMonitorRequest()){
+
+		if ($this->isMonitorRequest()) {
 			$postdata = file_get_contents("php://input");
 			unset($request['backjobMethod']);
-		} elseif(isset($request['backjobPostdata'])) {			
+		} elseif (isset($request['backjobPostdata'])) {
 			$postdata = http_build_query($request['backjobPostdata']);
 			unset($request['backjobPostdata']);
 		} else {
 			$postdata = '';
 		}
 		
+		$request['_e_back_job_check'] = md5($request['_e_back_job_id'] . $this->key);
+
 		$uri = Yii::app()->createAbsoluteUrl($route, $request);
 		$uri = '/' . preg_replace('/https?:\/\/(.)*?\//', '', $uri);
-		
-		
+
 		$port = Yii::app()->request->serverPort;
 		$host = Yii::app()->request->serverName;
+
+		/* Overcome proxies, force 443 if system thinks it's 80 and still secure connected */
+		if ((Yii::app()->request->isSecureConnection) && $port == 80) {
+			$port = 443;
+		}
 
 		if (($fp = fsockopen(($port == 443 ? 'ssl://' : '') . $host, $port, $errno, $errstr, 1000)) == false) {
 			return "Error $errno: $errstr";
 		}
-
 		// Come to the dark side! We have
 		$cookies = '';
 		if ($asCurrentUser)
@@ -518,15 +539,16 @@ class EBackJob extends CApplicationComponent {
 				$cookies .= urlencode($k) . '=' . urlencode($v) . '; ';
 
 		$lf = "\r\n";
+		//'Host: ' . $host . ($port ? ':' : '') . $port . $lf .
 		$req = $method . ' ' . $uri . ' HTTP/1.1' . $lf .
-				'Host: ' . $host . ($port ? ':' : '') . $port . $lf .
+				'Host: ' . $host . $lf .
 				'User-Agent: ' . $this->userAgent . $lf .
 				'Cache-Control: no-store, no-cache, must-revalidate' . $lf .
 				'Cache-Control: post-check=0, pre-check=0' . $lf .
 				'Pragma: no-cache' . $lf .
-				($cookies ? 'Cookie: ' . $cookies . $lf : '') ;
+				($cookies ? 'Cookie: ' . $cookies . $lf : '');
 
-		if($postdata){
+		if ($postdata) {
 			$req .= 'Content-Type: application/x-www-form-urlencoded' . $lf .
 					'Content-Length: ' . strlen($postdata) . $lf .
 					'Connection: Close' . $lf . $lf .
@@ -534,15 +556,17 @@ class EBackJob extends CApplicationComponent {
 		} else {
 			$req .= 'Connection: Close' . $lf . $lf;
 		}
-		
-		Yii::trace("Running background request: " .$req, "application.EBackJob");
+
+
+		Yii::trace("Running background request: " . $req, "application.EBackJob");
 		// Do the request
 		fwrite($fp, $req);
 
 		// Echo results if we're not async
-		if(!$async)
-			while(!feof($fp)) echo fgets($fp,128);
-		
+		if (!$async)
+			while (!feof($fp))
+				echo fgets($fp, 128);
+
 		// Close connection
 		fclose($fp);
 		return true;
@@ -550,14 +574,12 @@ class EBackJob extends CApplicationComponent {
 
 	/**
 	 * We're an internal request if localhost made the request and we have the url-id for a job
-	 * @return type
+	 * @return boolean
 	 */
-	private function isInternalRequest() {
-		return ((isset($_REQUEST['_e_back_job_id']) || $this->isMonitorRequest()) &&
-				(Yii::app()->request->userHostAddress == '127.0.0.1' ||
-				Yii::app()->request->userHostAddress == '::1' ||
-				$_SERVER['SERVER_ADDR'] == $_SERVER['REMOTE_ADDR'])
-				);
+	public function isInternalRequest() {
+		return (isset($_REQUEST['_e_back_job_id']) && 
+				isset($_REQUEST['_e_back_job_check']) &&
+				$_REQUEST['_e_back_job_check'] === md5($_REQUEST['_e_back_job_id'] . $this->key));
 	}
 
 	/**
@@ -565,15 +587,15 @@ class EBackJob extends CApplicationComponent {
 	 * @return boolean
 	 */
 	private function isMonitorRequest() {
-		return isset($_GET['_e_back_job_monitor_id']);
+		return $this->isInternalRequest() && isset($_GET['_e_back_job_monitor_id']);
 	}
-	
+
 	/**
 	 * Transform a request to a route and a parameter array
-	 * @param type $request
-	 * @return type
+	 * @param array|string $request
+	 * @return array
 	 */
-	private function requestToRoute($request){
+	private function requestToRoute($request) {
 		$params = array();
 		if (is_array($request)) {
 			$route = $request[0];
@@ -585,25 +607,22 @@ class EBackJob extends CApplicationComponent {
 		}
 		return array($route, $params);
 	}
-	
+
 	/**
 	 * Clear old database entries that have completed to limit the amount of backlog
 	 */
-	private function cleanDb(){		
-		if($this->useDb && $this->backlogDays){
-			$this->database->createCommand()->delete($this->tableName, 
-				'end_time < DATE_SUB(NOW(), INTERVAL :history DAY) AND status = :status', 
-				array(
-					':history' => $this->backlogDays,
-					':status' => self::STATUS_COMPLETED,
-				));		
+	private function cleanDb() {
+		if ($this->useDb && $this->backlogDays) {
+			$this->database->createCommand()->delete($this->tableName, 'end_time < DATE_SUB(NOW(), INTERVAL :history DAY) AND status = :status', array(
+				':history' => $this->backlogDays,
+				':status' => self::STATUS_COMPLETED,
+			));
 		}
-		if($this->useDb && $this->allBacklogDays){
-			$this->database->createCommand()->delete($this->tableName, 
-				'end_time < DATE_SUB(NOW(), INTERVAL :history DAY)', 
-				array(
-					':history' => $this->backlogDays
-				));
+		if ($this->useDb && $this->allBacklogDays) {
+			$this->database->createCommand()->delete($this->tableName, 'end_time < DATE_SUB(NOW(), INTERVAL :history DAY)', array(
+				':history' => $this->backlogDays
+			));
 		}
 	}
+
 }

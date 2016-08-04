@@ -2,6 +2,5 @@
 	"name": "greenhost/backjob",
 	"description": "Start an action in the background, run it either as the current user or anonymous and monitor progress",
 	"license" : "New BSD License",
-	"homepage": "https://github.com/greenhost/BackJob",
-    "version": 0.51
+	"homepage": "https://github.com/greenhost/BackJob"
 }

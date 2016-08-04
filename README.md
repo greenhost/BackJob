@@ -10,10 +10,35 @@ Works with Yii-1.1.14 and up. Needs to be able to use fsockopen and fwrite to it
 
 
 ##Installation
+
+### Composer install
+Backjob is not in the standard composer repository. It is however possible to
+use composer to manage the extension. Add the following lines to your
+composer.json file:
+
+~~~json
+"repositories": [
+    {
+        "url": "https://github.com/greenhost/BackJob",
+        "type": "vcs"
+    }
+],
+"require": {
+    "greenhost/backjob": "master-dev"
+},
+~~~
+
+This will clone the backjob repository into composer's vendor directory.
+
+### Old method
 Put the source from the zip archive in `protected/extensions` or from [https://github.com/greenhost/BackJob](https://github.com/greenhost/BackJob "Backjob Github Repo") in `protected/extensions/backjob`.
 
-Configuration:
+
+## Configuration:
 ~~~php
+// For composer method:
+Yii::setPathOfAlias('composer', dirname(__FILE__) . '/../../../vendor');
+
 // Yes, it needs preloads, but it's not resource-heavy (promise!)
 'preload' => array(
 	'background'
@@ -22,7 +47,10 @@ Configuration:
 
 'components' => array(
 	'background' => array(
-		'class' => 'ext.backjob.EBackJob',
+        // With composer:
+        'class' => 'composer.greenhost.backjob.EBackjob',
+		// The old method:
+        'class' => 'ext.backjob.EBackJob',
 
 		// All other configuration options are optional:
 

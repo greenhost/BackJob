@@ -554,7 +554,11 @@ class EBackJob extends CApplicationComponent {
 				$cookies .= urlencode($k) . '=' . urlencode($v) . '; ';
 
         // Also check if there's an authentication token that needs forwarding:
-        $token = ApiIdentity::getBearerToken(false);
+        $token = false;
+
+        // Check for API token
+        if(method_exists('ApiIdentity', 'getBearerToken'))
+            $token = ApiIdentity::getBearerToken(false);
 
 		$lf = "\r\n";
 		//'Host: ' . $host . ($port ? ':' : '') . $port . $lf .

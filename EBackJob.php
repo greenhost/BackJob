@@ -184,25 +184,16 @@ class EBackJob extends CApplicationComponent {
 
 	/**
 	 * Returns current status of the background job as an array with keys
-	 * ('progress','status_text','status')
+     * ('progress','status_text','status')
+     * If the job does not exist yet, a new job with default values is returned.
 	 * @param integer $jobId
 	 * @return false|array The status of this job
 	 */
 	public function getStatus($jobId) {
-		$ret = false;
-		if ($jobId) {
-			if ($this->useCache)
-				$ret = $this->cache[$this->cachePrefix . $jobId];
-			if (!$ret && $this->useDb) {
-				$ret = $this->database->createCommand()
-								->select('*')
-								->from($this->tableName)
-								->where('id=:id')->queryRow(true, array(':id' => $jobId));
-				if ($ret && $this->useCache) { // Update the cache with all the data
-					$this->cache[$this->cachePrefix . $jobId] = $ret;
-				}
-			}
-		}
+
+        // Get job from either cache or DB
+        $ret = $this->getExistingJob($jobId);
+
 		if (!is_array($ret)) {
 			$ret = array();
 		}
@@ -226,7 +217,31 @@ class EBackJob extends CApplicationComponent {
 		}
 
 		return $ret;
-	}
+    }
+
+    /** Returns a job from either the cache or the database. If the job is not 
+     * in the cache, but is in the database, it's added to the cache.
+     * @param int $jobId the unique ID of the job
+     * @return boolean|array the job if it's found, otherwise false.
+     */
+    public function getExistingJob($jobId)
+    {
+		$ret = false;
+		if ($jobId) {
+			if ($this->useCache)
+				$ret = $this->cache[$this->cachePrefix . $jobId];
+			if (!$ret && $this->useDb) {
+				$ret = $this->database->createCommand()
+								->select('*')
+								->from($this->tableName)
+								->where('id=:id')->queryRow(true, array(':id' => $jobId));
+				if ($ret && $this->useCache) { // Update the cache with all the data
+					$this->cache[$this->cachePrefix . $jobId] = $ret;
+				}
+			}
+		}
+        return $ret;
+    }
 
 	/**
 	 * Start a new background job. Returns ID of that job.
@@ -518,7 +533,7 @@ class EBackJob extends CApplicationComponent {
 		
 		$request['_e_back_job_check'] = md5($request['_e_back_job_id'] . $this->key);
 
-		$uri = Yii::app()->createAbsoluteUrl($route, $request);
+        $uri = Yii::app()->createAbsoluteUrl($route, $request);
 		$uri = '/' . preg_replace('/https?:\/\/(.)*?\//', '', $uri);
 
 		$port = Yii::app()->request->serverPort;
@@ -538,6 +553,9 @@ class EBackJob extends CApplicationComponent {
 			foreach (Yii::app()->request->cookies as $k => $v)
 				$cookies .= urlencode($k) . '=' . urlencode($v) . '; ';
 
+        // Also check if there's an authentication token that needs forwarding:
+        $token = ApiIdentity::getBearerToken(false);
+
 		$lf = "\r\n";
 		//'Host: ' . $host . ($port ? ':' : '') . $port . $lf .
 		$req = $method . ' ' . $uri . ' HTTP/1.1' . $lf .
@@ -546,7 +564,8 @@ class EBackJob extends CApplicationComponent {
 				'Cache-Control: no-store, no-cache, must-revalidate' . $lf .
 				'Cache-Control: post-check=0, pre-check=0' . $lf .
 				'Pragma: no-cache' . $lf .
-				($cookies ? 'Cookie: ' . $cookies . $lf : '');
+				($cookies ? 'Cookie: ' . $cookies . $lf : '' ) .
+				($token ? 'Authorization: ' . $token . $lf : '');
 
 		if ($postdata) {
 			$req .= 'Content-Type: application/x-www-form-urlencoded' . $lf .
@@ -613,13 +632,13 @@ class EBackJob extends CApplicationComponent {
 	 */
 	private function cleanDb() {
 		if ($this->useDb && $this->backlogDays) {
-			$this->database->createCommand()->delete($this->tableName, 'end_time < DATE_SUB(NOW(), INTERVAL :history DAY) AND status = :status', array(
+			$this->database->createCommand()->delete($this->tableName, 'end_time < DATE_SUB(NOW(), INTERVAL :history DAY) AND status = :status AND end_time != 0', array(
 				':history' => $this->backlogDays,
 				':status' => self::STATUS_COMPLETED,
 			));
 		}
 		if ($this->useDb && $this->allBacklogDays) {
-			$this->database->createCommand()->delete($this->tableName, 'end_time < DATE_SUB(NOW(), INTERVAL :history DAY)', array(
+			$this->database->createCommand()->delete($this->tableName, 'end_time < DATE_SUB(NOW(), INTERVAL :history DAY) AND end_time != 0', array(
 				':history' => $this->backlogDays
 			));
 		}

@@ -521,7 +521,7 @@ class EBackJob extends CApplicationComponent {
 	protected function doRequest($route, $request = array(), $asCurrentUser = true, $async = false) {
 		$method = isset($request['backjobMethod']) ? $request['backjobMethod'] : 'GET';
 
-		if(Yii::app()->request->enableCsrfValidation && $request['backjobMethod'] == 'POST')
+		if(Yii::app()->request->enableCsrfValidation && $method == 'POST')
 		{
 			$request['backjobPostdata'][Yii::app()->request->csrfTokenName] = Yii::app()->request->getCsrfToken();
 		}

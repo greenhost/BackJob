@@ -562,7 +562,7 @@ class EBackJob extends CApplicationComponent {
 			}
 			
 		if (Yii::app()->request->enableCookieValidation)
-			$cookies .= urlencode('PHPSESSID') . '=' . urlencode(Yii::app()->session-sessionID) . '; ';
+			$cookies .= urlencode('PHPSESSID') . '=' . urlencode(Yii::app()->session->sessionID) . '; ';
 
         // Also check if there's an authentication token that needs forwarding:
         $token = false;

@@ -601,6 +601,10 @@ class EBackJob extends CApplicationComponent {
 			while (!feof($fp))
 				echo fgets($fp, 128);
 
+        // Wait one second before closing connection. Some webservers do not
+        // execute the request if the connection is terminated directly
+        sleep(1);
+
 		// Close connection
 		fclose($fp);
 		return true;

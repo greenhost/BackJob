@@ -40,10 +40,10 @@
  */
 class EBackJob extends CApplicationComponent {
 
-    const STATUS_STARTED = 0;
-    const STATUS_INPROGRESS = 1;
-    const STATUS_COMPLETED = 2;
-    const STATUS_FAILED = 3;
+    public const STATUS_STARTED = 0;
+    public const STATUS_INPROGRESS = 1;
+    public const STATUS_COMPLETED = 2;
+    public const STATUS_FAILED = 3;
 
     /**
      * Database connection

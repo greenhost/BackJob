@@ -6,38 +6,37 @@
  * @author    Siquo
  * @copyright 2014 Greenhost
  * @package   backjob
- * @version   0.45
  * @license   New BSD License
  *
  *
  *
- * Copyright (c) 2014, Greenhost
- * All rights reserved.
+ * Copyright (c) 2014, Greenhost All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * 1. Redistributions of source code must retain the above copyright notice, this
- * list of conditions and the following disclaimer.
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
  * 2. Redistributions in binary form must reproduce the above copyright notice,
- * this list of conditions and the following disclaimer in the documentation and/or
- * other materials provided with the distribution.
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
  * 3. Neither the name of Greenhost nor the names of its contributors may be
- * used to endorse or promote products derived from this software without specific
- * prior written permission.
+ *    used to endorse or promote products derived from this software without
+ *    specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
- * OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 class EBackJob extends CApplicationComponent {
 
@@ -63,14 +62,14 @@ class EBackJob extends CApplicationComponent {
     /**
      * Should we use the cache?
      *
-     * @var boolean
+     * @var bool
      */
     public $useCache = true;
 
     /**
      * Should we use the database?
      *
-     * @var boolean
+     * @var bool
      */
     public $useDb = true;
 
@@ -82,9 +81,10 @@ class EBackJob extends CApplicationComponent {
     public $tableName = 'e_background_job';
 
     /**
-     * Check if he database exists, and create it if it doesn't? (Set to false in production!)
+     * Whether to check that the database exists, and create it if it does not.
+     * Set it to false in production!
      *
-     * @var boolean
+     * @var bool
      */
     public $checkAndCreateTable = false;
 
@@ -105,28 +105,30 @@ class EBackJob extends CApplicationComponent {
     /**
      * Number of seconds after which an error-timeout occurs.
      *
-     * @var integer
+     * @var int
      */
     public $errorTimeout = 120;
 
     /**
-     * Number of days we keep a backlog of database entries of succesfully completed requests. Set to 0 to disable cleanup entirely
+     * Number of days we keep a backlog of database entries of succesfully
+     * completed requests. Set to 0 to disable cleanup entirely
      *
-     * @var integer
+     * @var int
      */
     public $backlogDays = 30;
 
     /**
-     * Number of days we keep a backlog of database entries of all requests. Set to 0 to disable cleanup entirely
+     * Number of days we keep a backlog of database entries of all requests. Set
+     * to 0 to disable cleanup entirely
      *
-     * @var integer
+     * @var int
      */
     public $allBacklogDays = 60;
 
     /**
      * If we're inside a jobrequest, this is the current ID
      *
-     * @var integer
+     * @var int
      */
     public $currentJobId;
 
@@ -147,7 +149,6 @@ class EBackJob extends CApplicationComponent {
         if ($this->checkAndCreateTable && $this->useDb && !$this->database->schema->getTable($this->tableName)) {
             $this->createTable();
         }
-
 
         // We're in a background request? Register events
         if ($this->isInternalRequest()) {
@@ -200,11 +201,11 @@ class EBackJob extends CApplicationComponent {
 
     /**
      * Returns current status of the background job as an array with keys
-     * ('progress','status_text','status')
-     * If the job does not exist yet, a new job with default values is returned.
+     * ('progress','status_text','status') If the job does not exist yet, the
+     * default values are returned.
      *
-     * @param  integer $jobId
-     * @return false|array The status of this job
+     * @param  int $jobId
+     * @return array The status of this job
      */
     public function getStatus($jobId) {
         // Get job from either cache or DB
@@ -238,11 +239,11 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
- * Returns a job from either the cache or the database. If the job is not
-     * in the cache, but is in the database, it's added to the cache.
+     * Returns a job from either the cache or the database. If the job is not in
+     * the cache, but is in the database, it's added to the cache.
      *
      * @param  int $jobId the unique ID of the job
-     * @return boolean|array the job if it's found, otherwise false.
+     * @return bool|array the job if it's found, otherwise false.
      */
     public function getExistingJob($jobId) {
         $ret = false;
@@ -267,19 +268,19 @@ class EBackJob extends CApplicationComponent {
      * Start a new background job. Returns ID of that job.
      *
      * @param  string|array $route Route to controller/action
-     * @param  boolean Run job as the current user? (Default = true)
-     * @param  integer $timedelay Seconds to postpone
-     * @return integer Id of the new job
+     * @param  bool Run job as the current user? (Default = true)
+     * @param  int $timedelay Seconds to postpone UNUSED!
+     * @return int Id of the new job
      */
     public function start($route, $asCurrentUser = true, $timedelay = 0) {
         return $this->runMonitor($route, $asCurrentUser);
     }
 
     /**
-     * Update a job's status. Either provide a status array or a progress percentage
+     * Update a job's status
      *
-     * @param array|integer $status
-     * @param integer $jobId
+     * @param array|int $status a status array or a progress percentage
+     * @param int $jobId
      */
     public function update($status = [], $jobId = false) {
         if (!$jobId) {
@@ -305,8 +306,8 @@ class EBackJob extends CApplicationComponent {
     /**
      * Update a job's status by incrementing the status by $amount
      *
-     * @param array|integer $status
-     * @param integer $jobId
+     * @param array|int $status
+     * @param int $jobId
      */
     public function updateIncrement($amount, $jobId = false) {
         if (!$jobId) {
@@ -319,7 +320,7 @@ class EBackJob extends CApplicationComponent {
     /**
      * Finish a job (alias for "update as finished")
      *
-     * @param integer $jobId
+     * @param int $jobId
      * @param array $status
      */
     public function finish($status = [], $jobId = false) {
@@ -343,7 +344,7 @@ class EBackJob extends CApplicationComponent {
     /**
      * Fail a job (alias for "update as finished with a fail status")
      *
-     * @param integer $jobId
+     * @param int $jobId
      * @param array $status
      */
     public function fail($status = [], $jobId = false) {
@@ -366,7 +367,7 @@ class EBackJob extends CApplicationComponent {
     /**
      * Set status of a certain job
      *
-     * @param integer $jobId
+     * @param int $jobId
      * @param array $status
      */
     public function setStatus($jobId, $status) {
@@ -408,7 +409,7 @@ class EBackJob extends CApplicationComponent {
     /**
      * Perform status changes to cache
      *
-     * @param integer $jobId
+     * @param int $jobId
      * @param array $status
      */
     private function setCacheStatus($jobId, $status) {
@@ -422,7 +423,7 @@ class EBackJob extends CApplicationComponent {
     /**
      * Perform status changes to database
      *
-     * @param integer $jobId
+     * @param int $jobId
      * @param array $status
      */
     private function setDbStatus($jobId, $status) {
@@ -433,7 +434,7 @@ class EBackJob extends CApplicationComponent {
      * Create a status, returns its ID
      *
      * @param  array $status
-     * @return integer The new ID
+     * @return int The new ID
      */
     private function createStatus($status = []) {
         $jobId = false;
@@ -454,7 +455,7 @@ class EBackJob extends CApplicationComponent {
     /**
      * Get a new unique cache id for a new job
      *
-     * @return integer
+     * @return int
      */
     private function getNewCacheId() {
         $cid = $this->cachePrefix . 'maxid';
@@ -489,7 +490,8 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * The monitor thread. Starts a background request and reports on its progress or failure.
+     * The monitor thread. Starts a background request and reports on its
+     * progress or failure.
      */
     protected function monitor() {
         $jobId = $this->currentJobId;
@@ -510,7 +512,8 @@ class EBackJob extends CApplicationComponent {
                     'status_text' => $job['status_text'] . '<br>' . $result
                 ]);
             }
-            $this->finish(); // make sure it's finished if it's not finished or failed already
+            // make sure it's finished if it's not finished or failed already
+            $this->finish(); 
         } else {
             $this->fail(['status_text' => 'Error: Request not found' . $jobId . var_export($job, true)]);
         }
@@ -522,7 +525,7 @@ class EBackJob extends CApplicationComponent {
      * Start a new monitor and run it in the background
      *
      * @param  string|array $request The request (as array or route-string)
-     * @param  boolean Run job as the current user? (Default = true)
+     * @param  bool Run job as the current user? (Default = true)
      * @return string Job-ID: the job id through which the job can be monitored
      */
     protected function runMonitor($request, $asCurrentUser = true) {
@@ -546,10 +549,11 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Start a new job and run it in the foreground (this is run from within the monitor)
+     * Start a new job and run it in the foreground (this is run from within the
+     * monitor)
      *
      * @param  string|array $request The request (as array or route-string)
-     * @param  boolean Run job as the current user? (Default = true)
+     * @param  bool Run job as the current user? (Default = true)
      * @return string Job-ID: the job id through which the job can be monitored
      */
     protected function runAction($request, $jobId) {
@@ -564,8 +568,8 @@ class EBackJob extends CApplicationComponent {
      *
      * @param  string $route Yii route to the action to run
      * @param  array $request Optional array of GET/POST parameters
-     * @param  boolean Run job as the current user? (Default = true)
-     * @return boolean|string Returns either error message or true
+     * @param  bool Run job as the current user? (Default = true)
+     * @return bool|string Returns either error message or true
      */
     protected function doRequest($route, $request = [], $asCurrentUser = true, $async = false) {
         $method = isset($request['backjobMethod']) ? $request['backjobMethod'] : 'GET';
@@ -591,7 +595,8 @@ class EBackJob extends CApplicationComponent {
         $port = Yii::app()->request->serverPort;
         $host = Yii::app()->request->serverName;
 
-        /* Overcome proxies, force 443 if system thinks it's 80 and still secure connected */
+        // Overcome proxies, force 443 if system thinks it's 80 and still secure
+        // connected
         if ((Yii::app()->request->isSecureConnection) && $port == 80) {
             $port = 443;
         }
@@ -664,9 +669,10 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * We're an internal request if localhost made the request and we have the url-id for a job
+     * We're an internal request if localhost made the request and we have the
+     * url-id for a job
      *
-     * @return boolean
+     * @return bool
      */
     public function isInternalRequest() {
         return (isset($_REQUEST['_e_back_job_id']) &&
@@ -677,7 +683,7 @@ class EBackJob extends CApplicationComponent {
     /**
      * Check if we're a monitor-thread
      *
-     * @return boolean
+     * @return bool
      */
     private function isMonitorRequest() {
         return $this->isInternalRequest() && isset($_GET['_e_back_job_monitor_id']);
@@ -703,7 +709,8 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Clear old database entries that have completed to limit the amount of backlog
+     * Clear old database entries that have completed to limit the amount of
+     * backlog
      */
     private function cleanDb() {
         if ($this->useDb && $this->backlogDays) {

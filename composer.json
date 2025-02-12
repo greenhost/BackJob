@@ -1,6 +1,9 @@
 {
-	"name": "greenhost/backjob",
-	"description": "Start an action in the background, run it either as the current user or anonymous and monitor progress",
-	"license" : "New BSD License",
-	"homepage": "https://github.com/greenhost/BackJob"
+    "name": "greenhost/backjob",
+    "description": "Start an action in the background, run it either as the current user or anonymous and monitor progress",
+    "license" : "New BSD License",
+    "homepage": "https://github.com/greenhost/BackJob",
+    "require": {
+        "php": ">=7.2"
+    }
 }

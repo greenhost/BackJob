@@ -146,8 +146,10 @@ class EBackJob extends CApplicationComponent {
      * Initialize properties.
      */
     public function init() {
-        if ($this->checkAndCreateTable && $this->useDb && !$this->database->schema->getTable($this->tableName)) {
-            $this->createTable();
+        if ($this->useDb && $this->checkAndCreateTable) {
+            if (!$this->database->schema->getTable($this->tableName)) {
+                $this->createTable();
+            }
         }
 
         // We're in a background request? Register events
@@ -193,9 +195,7 @@ class EBackJob extends CApplicationComponent {
                 'status_text' => $content . var_export($error['message'], true)
             ]);
         } else {
-            $this->finish([
-                'status_text' => $content
-            ]);
+            $this->finish(['status_text' => $content]);
         }
     }
 
@@ -226,12 +226,13 @@ class EBackJob extends CApplicationComponent {
         ], $ret);
 
         // Check for a timeout error
-        if (
-            $jobId &&
-                $ret['status'] < self::STATUS_COMPLETED &&
-                (strtotime($ret['updated_time']) + ($this->errorTimeout)) < time()
-        ) {
-            $this->fail(["status_text" => $ret['status_text'] . "<br/><strong>Error: job timeout</strong>"], $jobId);
+        $uncompleted = $ret['status'] < self::STATUS_COMPLETED;
+        $lastUpdate = strtotime($ret['updated_time']);
+        $timedOut = ($lastUpdate + $this->errorTimeout) < time();
+        if ($jobId && $uncompleted && $timedOut) {
+            $error = "<strong>Error: job timeout</strong>";
+            $text = $ret['status_text'] .  "<br/>" . $error;
+            $this->fail(["status_text" => $text], $jobId);
             $ret = $this->getStatus($jobId);
         }
 
@@ -253,10 +254,11 @@ class EBackJob extends CApplicationComponent {
             }
             if (!$ret && $this->useDb) {
                 $ret = $this->database->createCommand()
-                                ->select('*')
-                                ->from($this->tableName)
-                                ->where('id=:id')->queryRow(true, [':id' => $jobId]);
-                if ($ret && $this->useCache) { // Update the cache with all the data
+                    ->select('*')
+                    ->from($this->tableName)
+                    ->where('id=:id')->queryRow(true, [':id' => $jobId]);
+                if ($ret && $this->useCache) {
+                    // Update the cache with all the data
                     $this->cache[$this->cachePrefix . $jobId] = $ret;
                 }
             }
@@ -287,17 +289,19 @@ class EBackJob extends CApplicationComponent {
             $jobId = $this->currentJobId;
         }
 
-        Yii::trace("Updating status for job: " . $jobId . " args: " . var_export($status, true), "application.EBackJob");
+        $args = var_export($status, true);
+        $msg = "Updating status for job: $jobId args: $args";
+        Yii::trace($msg, "application.EBackJob");
         if ($jobId) {
             if (!is_array($status)) {
                 $status = ['progress' => $status];
             }
             $this->setStatus($jobId, array_merge(
                 [
-                'updated_time' => date('Y-m-d H:i:s'),
-                'status' => self::STATUS_INPROGRESS,
-                'status_text' => ob_get_contents(),
-                            ],
+                    'updated_time' => date('Y-m-d H:i:s'),
+                    'status' => self::STATUS_INPROGRESS,
+                    'status_text' => ob_get_contents(),
+                ],
                 $status
             ));
         }
@@ -331,10 +335,10 @@ class EBackJob extends CApplicationComponent {
         if ($job['status'] < self::STATUS_COMPLETED) {
             $this->update(array_merge(
                 [
-                'progress' => 100,
-                'end_time' => date('Y-m-d H:i:s'),
-                'status' => self::STATUS_COMPLETED,
-                            ],
+                    'progress' => 100,
+                    'end_time' => date('Y-m-d H:i:s'),
+                    'status' => self::STATUS_COMPLETED,
+                ],
                 $status
             ), $jobId);
         }
@@ -356,9 +360,9 @@ class EBackJob extends CApplicationComponent {
         }
         $this->update(array_merge(
             [
-                            'end_time' => date('Y-m-d H:i:s'),
-                            'status' => self::STATUS_FAILED,
-                        ],
+                'end_time' => date('Y-m-d H:i:s'),
+                'status' => self::STATUS_FAILED,
+            ],
             $status
         ), $jobId);
         Yii::app()->end();
@@ -427,7 +431,11 @@ class EBackJob extends CApplicationComponent {
      * @param array $status
      */
     private function setDbStatus($jobId, $status) {
-        $this->database->createCommand()->update($this->tableName, $status, 'id=:id', [':id' => $jobId]);
+        $this->database->createCommand()->update(
+            $this->tableName,
+            $status, 'id=:id',
+            [':id' => $jobId]
+        );
     }
 
     /**
@@ -476,15 +484,15 @@ class EBackJob extends CApplicationComponent {
             $this->database->schema->createTable(
                 $this->tableName,
                 [
-                            'id' => 'pk',
-                            'progress' => 'integer',
-                            'status' => 'integer',
-                            'start_time' => 'timestamp DEFAULT CURRENT_TIMESTAMP ',
-                            'updated_time' => 'timestamp',
-                            'end_time' => 'timestamp',
-                            'request' => 'text',
-                            'status_text' => 'text',
-                        ]
+                    'id' => 'pk',
+                    'progress' => 'integer',
+                    'status' => 'integer',
+                    'start_time' => 'timestamp DEFAULT CURRENT_TIMESTAMP ',
+                    'updated_time' => 'timestamp',
+                    'end_time' => 'timestamp',
+                    'request' => 'text',
+                    'status_text' => 'text',
+                ]
             )
         )->execute();
     }
@@ -499,12 +507,15 @@ class EBackJob extends CApplicationComponent {
 
         // If the start time is in the future, wait for that time (and re-check again)
         while (($job = $this->getStatus($jobId)) && strtotime($job['start_time']) > time()) {
-            set_time_limit($this->errorTimeout + (strtotime($job['start_time']) - time()) + 5);
-            sleep((strtotime($job['start_time']) - time()));
+            // Calculate how many seconds we should wait before starting:
+            $waitTime = strtotime($job['start_time']) - time();
+            set_time_limit($this->errorTimeout + $waitTime + 5);
+            sleep($waitTime);
         }
 
         if ($job['request']) {
-            $result = $this->runAction(json_decode($job['request'], true), $jobId);
+            $request = json_decode($job['request'], true);
+            $result = $this->runAction($request, $jobId);
 
             if ($result !== true) {
                 $job = $this->getStatus($jobId);
@@ -512,10 +523,11 @@ class EBackJob extends CApplicationComponent {
                     'status_text' => $job['status_text'] . '<br>' . $result
                 ]);
             }
-            // make sure it's finished if it's not finished or failed already
-            $this->finish(); 
+            // Make sure it's finished if it's not finished or failed already:
+            $this->finish();
         } else {
-            $this->fail(['status_text' => 'Error: Request not found' . $jobId . var_export($job, true)]);
+            $msg = 'Error: Request not found' . $jobId . var_export($job, true);
+            $this->fail(['status_text' => $msg]);
         }
 
         Yii::app()->end();
@@ -541,9 +553,7 @@ class EBackJob extends CApplicationComponent {
         $return = $this->doRequest($route, $params, $asCurrentUser, true);
 
         if ($return !== true) {
-            $this->fail([
-                'status_text' => $return,
-                    ], $jobId);
+            $this->fail(['status_text' => $return], $jobId);
         }
         return $jobId;
     }
@@ -560,7 +570,7 @@ class EBackJob extends CApplicationComponent {
         list($route, $params) = $this->requestToRoute($request);
         $params['_e_back_job_id'] = $jobId;
 
-        return($this->doRequest($route, $params));
+        return $this->doRequest($route, $params);
     }
 
     /**
@@ -572,10 +582,12 @@ class EBackJob extends CApplicationComponent {
      * @return bool|string Returns either error message or true
      */
     protected function doRequest($route, $request = [], $asCurrentUser = true, $async = false) {
-        $method = isset($request['backjobMethod']) ? $request['backjobMethod'] : 'GET';
+        $method = $request['backjobMethod'] ?? 'GET';
 
         if (Yii::app()->request->enableCsrfValidation && $method == 'POST') {
-            $request['backjobPostdata'][Yii::app()->request->csrfTokenName] = Yii::app()->request->getCsrfToken();
+            $tokenName = Yii::app()->request->csrfTokenName;
+            $tokenValue = Yii::app()->request->getCsrfToken();
+            $request['backjobPostdata'][$tokenName] = $tokenValue;
         }
         if ($this->isMonitorRequest()) {
             $postdata = file_get_contents("php://input");
@@ -601,7 +613,9 @@ class EBackJob extends CApplicationComponent {
             $port = 443;
         }
 
-        if (($fp = fsockopen(($port == 443 ? 'ssl://' : '') . $host, $port, $errno, $errstr, 1000)) == false) {
+        $hostname = ($port == 443 ? 'ssl://' : '') . $host;
+        $fp = fsockopen($hostname, $port, $errno, $errstr, 1000);
+        if ($fp == false) {
             return "Error $errno: $errstr";
         }
         // Come to the dark side! We have
@@ -616,7 +630,8 @@ class EBackJob extends CApplicationComponent {
         }
 
         if (Yii::app()->request->enableCookieValidation) {
-            $cookies .= urlencode('PHPSESSID') . '=' . urlencode(Yii::app()->session->sessionID) . '; ';
+            $sessionId = Yii::app()->session->sessionID;
+            $cookies .= urlencode('PHPSESSID') . '=' . urlencode($sessionId) . '; ';
         }
 
         // Also check if there's an authentication token that needs forwarding:
@@ -646,7 +661,6 @@ class EBackJob extends CApplicationComponent {
         } else {
             $req .= 'Connection: Close' . $lf . $lf;
         }
-
 
         Yii::trace("Running background request: " . $req, "application.EBackJob");
         // Do the request
@@ -713,16 +727,23 @@ class EBackJob extends CApplicationComponent {
      * backlog
      */
     private function cleanDb() {
+        $historyStart = 'DATE_SUB(NOW(), INTERVAL :history DAY)';
         if ($this->useDb && $this->backlogDays) {
-            $this->database->createCommand()->delete($this->tableName, 'end_time < DATE_SUB(NOW(), INTERVAL :history DAY) AND status = :status AND end_time != 0', [
-                ':history' => $this->backlogDays,
-                ':status' => self::STATUS_COMPLETED,
-            ]);
+            $this->database->createCommand()->delete(
+                $this->tableName,
+                "end_time < $historyStart AND status = :status AND end_time != 0",
+                [
+                    ':history' => $this->backlogDays,
+                    ':status' => self::STATUS_COMPLETED,
+                ]
+            );
         }
         if ($this->useDb && $this->allBacklogDays) {
-            $this->database->createCommand()->delete($this->tableName, 'end_time < DATE_SUB(NOW(), INTERVAL :history DAY) AND end_time != 0', [
-                ':history' => $this->backlogDays
-            ]);
+            $this->database->createCommand()->delete(
+                $this->tableName,
+                "end_time < $historyStart AND end_time != 0",
+                [':history' => $this->backlogDays]
+            );
         }
     }
 }

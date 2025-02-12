@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!-- CONTRIBUTING.md explains how to use this file with PHP_CodeSniffer -->
+<ruleset name="GreenhostStandard">
+  <description>Greenhost PHP coding standard</description>
+
+  <rule ref="PSR12">
+    <!-- Yii enforced deviations from PSR-2 -->
+    <exclude name="PSR1.Classes.ClassDeclaration.MissingNamespace"/>
+    <exclude name="PSR2.Classes.PropertyDeclaration.Underscore"/>
+
+    <!-- Greenhost endorsed deviations from PSR-2 or PSR-12-->
+    <exclude name="PSR2.Classes.ClassDeclaration.OpenBraceNewLine"/>
+    <exclude name="Squiz.Functions.MultiLineFunctionDeclaration.BraceOnSameLine"/>
+    <exclude name="PSR12.Classes.OpeningBraceSpace.Found"/>
+    <!-- exclude name="Generic.WhiteSpace.DisallowTabIndent"/ -->
+  </rule>
+
+  <!-- No blank lines after a functions opening brace: -->
+  <rule ref="Squiz.WhiteSpace.FunctionOpeningBraceSpace"/>
+
+  <!-- Enforce the function declaration opening brace on the same line: -->
+  <rule ref="Generic.Functions.OpeningFunctionBraceKernighanRitchie"/>
+
+  <!-- Enforce the class declaration opening brace on the same line: -->
+  <rule ref="Generic.Classes.OpeningBraceSameLine"/>
+
+  <!-- Enforce the short array notation: -->
+  <rule ref="Generic.Arrays.DisallowLongArraySyntax"/>
+
+  <!-- Some Code Analysis: -->
+  <rule ref="Generic.CodeAnalysis.UnusedFunctionParameter"/>
+  <rule ref="Generic.Commenting.DocComment"/>
+  <rule ref="Generic.Commenting.Fixme"/>
+  <rule ref="Generic.Commenting.Todo"/>
+  <rule ref="Generic.Metrics.CyclomaticComplexity"/>
+  <rule ref="Generic.Metrics.NestingLevel"/>
+  <rule ref="Generic.PHP.DeprecatedFunctions"/>
+
+  <rule ref="Generic.Files.LineLength">
+    <properties>
+      <property name="lineLimit" value="100"/>
+      <property name="absoluteLineLimit" value="120"/>
+    </properties>
+  </rule>
+</ruleset>

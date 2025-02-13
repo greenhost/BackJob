@@ -211,25 +211,62 @@ class testController extends Controller {
 
 ## Changelog
 
-- 0.50 - Changed the way internal requests are recognised, they are now checked
-  by parameters instead of from-headers, should work nicer with proxied servers,
-  and be more resilient against spoofing. Change the `key` field in
-  configuration!
-- 0.45 - Added support for other HTTP methods and POST-data.
-- 0.44 - The timeout-setting now also affects the php-timeout setting with
-  `set_time_limit`, thanks to martijnjonkers.
-- 0.43 - Added backlog-cleanup for the database, so that it won't fill up with
-  completed requests. Keep in mind that there are two different time-scales, one
-  for successfully finished jobs, and one for all jobs including failed ones.
-  Setting these to 0 days will stop cleanup entirely, this might lead to an
-  ever-expanding database! Thanks to Arno S for noticing this omission.
-- 0.42 - Few bugfixes: creation of table, cache was unuseable, a typo
-- 0.41 - Small bugfix
-- 0.40 - Added monitoring thread that waits for the job to end, so requests that
-  end prematurely still finish. Also, you can specify a number of seconds to
-  wait until processing, and multiple requests with the exact same route will be
-  merged together into one request.
-- 0.33 - Https support, better self-recognition, added request field (update
-  your database table!), added global timeout.
-- 0.32 - Fails better.
-- 0.31 - Initial component
+- **0.58**
+    - Fixed some markdown formatting in the documentation
+    - Added a .gitignore file and PHP code formatting rules
+    - Required at least PHP 7.2
+    - Applied automated and manual code formatting changes
+    - Declared visibility on class constants
+- **0.57**
+    - Changed space to tabs
+- **0.56**
+    - Add small delay before closing connection
+- **0.55**
+    - Fix typo in cookievalidation enabled code
+- **0.54**
+    - Fix php error
+- **0.53**
+    - Give backjob CSRF compatibility
+- **0.52**
+    - Update for support enableCookieValidation
+    - Add composer file and update readme for composer instructions
+    - Remove direct ApiIdentity dependency
+    - Fix bug where running backjobs get deleted
+    - Fix bug were unintended status records get created
+- **0.51**
+    - Converted the README to use the GFM style format.
+- **0.50**
+     - Changed the way internal requests are recognised, they are now checked by
+       parameters instead of from-headers, should work nicer with proxied
+       servers, and be more resilient against spoofing. Change the `key` field
+       in configuration!
+- **0.45**
+    - Added support for other HTTP methods and POST-data.
+- **0.44**
+    - The timeout-setting now also affects the php-timeout setting with
+      `set_time_limit`, thanks to martijnjonkers.
+- **0.43**
+    - Added backlog-cleanup for the database, so that it won't fill up with
+      completed requests. Keep in mind that there are two different time-scales,
+      one for successfully finished jobs, and one for all jobs including failed
+      ones. Setting these to 0 days will stop cleanup entirely, this might lead
+      to an ever-expanding database! Thanks to Arno S for noticing this
+      omission.
+- **0.42**
+    - Few bugfixes: creation of table, cache was unuseable, a typo
+- **0.41**
+    - Small bugfix
+- **0.40**
+    - Added monitoring thread that waits for the job to end, so requests that
+      end prematurely still finish.
+    - Also, you can specify a number of seconds to wait until processing
+    - Multiple requests with the exact same route will be merged together into
+      one request.
+- **0.33**
+    - Https support, better self-recognition
+    - Added request field (update your database table!)
+    - Added global timeout
+- **0.32**
+    - Fails better
+- **0.31**
+    - Initial component

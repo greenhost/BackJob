@@ -211,6 +211,8 @@ class testController extends Controller {
 
 ## Changelog
 
+- **0.59**
+    - Repair delayed job execution
 - **0.58**
     - Fixed some markdown formatting in the documentation
     - Added a .gitignore file and PHP code formatting rules

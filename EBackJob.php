@@ -271,11 +271,11 @@ class EBackJob extends CApplicationComponent {
      *
      * @param  string|array $route Route to controller/action
      * @param  bool Run job as the current user? (Default = true)
-     * @param  int $timedelay Seconds to postpone UNUSED!
+     * @param  int $timedelay Seconds to postpone
      * @return int Id of the new job
      */
     public function start($route, $asCurrentUser = true, $timedelay = 0) {
-        return $this->runMonitor($route, $asCurrentUser);
+        return $this->runMonitor($route, $asCurrentUser, $timedelay);
     }
 
     /**
@@ -538,14 +538,19 @@ class EBackJob extends CApplicationComponent {
      *
      * @param  string|array $request The request (as array or route-string)
      * @param  bool Run job as the current user? (Default = true)
+     * @param  int $timedelay Seconds to postpone
      * @return string Job-ID: the job id through which the job can be monitored
      */
-    protected function runMonitor($request, $asCurrentUser = true) {
+    protected function runMonitor($request, $asCurrentUser = true, $timedelay = 0) {
         if (!is_array($request)) {
             $request = [$request];
         }
         list($route, $params) = $this->requestToRoute($request);
-        $jobId = $this->createStatus(['request' => json_encode($request)]);
+        $status = ['request' => json_encode($request)];
+        if ($timedelay > 0) {
+            $status['start_time'] = date('Y-m-d H:i:s', time() + $timedelay);
+        }
+        $jobId = $this->createStatus($status);
 
         $params['_e_back_job_monitor_id'] = $jobId;
         $params['_e_back_job_id'] = $jobId;

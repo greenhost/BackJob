@@ -209,8 +209,47 @@ class testController extends Controller {
 }
 ~~~
 
+## How the background request mechanism works
+
+The client session can call these methods:
+- `start()` to request the execution of a new background job
+- `getStatus()` to get the status of an existing background job
+
+The worker session can call these methods:
+- `update()` to set a progress percentage and store the current output buffer
+  contents in the database.
+- `updateIncrement()` same as `update()` but with an integer increment
+- `finish()` and `fail()` although they would get called at the end of the
+  request anyway, depending on wheter there was an error.
+
+The call to `start()` will insert a new job status record and then do an
+internal HTTP request to the route/endpoint that should do the work. It will
+forward information from the client session (CSRF token, cookies, PHP session
+Id, API token). After sending the internal request, the connection is closed
+almost immediately, without waiting for the response. The newly created job Id
+is returned.
+
+The EBackJob component is preloaded, so the request that was just sent, will hit
+the EBackJob initialization, which recognizes it as an internal BackJob request.
+Instead of letting the Yii app handle the request, it will run the `monitor()`
+function, which fetches the job status record to check if it should start right
+away or wait a specified time. It reads the intended route and parameters from
+the record and makes another internal HTTP request. After sending this second
+request, it keeps the connection open and waits for the result. After that, the
+job status is updated to be either completed or failed.
+
+The second internal request also hits the EBackJob initialization, which
+recognizes it as the background worker request. It registers two callbacks to
+facilitate output buffering. It then lets the Yii app handle the request, which
+should typically be a controller action written for background work.
+
 ## Changelog
 
+- **0.60**
+    - Added a method to check being a background worker request
+    - Reduced code complexity by inlining some code
+    - Reduced the visibilty of some internals
+    - Explained how the background request mechanism is implemented
 - **0.59**
     - Repair delayed job execution
 - **0.58**

@@ -130,7 +130,7 @@ class EBackJob extends CApplicationComponent {
      *
      * @var int
      */
-    public $currentJobId;
+    private $currentJobId;
 
     /**
      * Unique key for your application
@@ -152,13 +152,15 @@ class EBackJob extends CApplicationComponent {
             }
         }
 
-        // We're in a background request? Register events
+        // Are we in a request made by this class?
         if ($this->isInternalRequest()) {
             set_time_limit($this->errorTimeout + 5);
+            $this->currentJobId = $_REQUEST['_e_back_job_id'];
             if ($this->isMonitorRequest()) {
-                $this->currentJobId = $_GET['_e_back_job_monitor_id'];
+                // Call the background worker endpoint in another request:
                 $this->monitor();
             } else {
+                // We are the background worker endpoint
                 $this->currentJobId = $_REQUEST['_e_back_job_id'];
                 Yii::app()->onBeginRequest = [$this, 'startRequest'];
                 Yii::app()->onEndRequest = [$this, 'endRequest'];
@@ -267,15 +269,33 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Start a new background job. Returns ID of that job.
+     * Starts a new background job and returns ID of that job.
      *
-     * @param  string|array $route Route to controller/action
+     * @param  string|array $request Route to controller/action
      * @param  bool Run job as the current user? (Default = true)
      * @param  int $timedelay Seconds to postpone
      * @return int Id of the new job
      */
-    public function start($route, $asCurrentUser = true, $timedelay = 0) {
-        return $this->runMonitor($route, $asCurrentUser, $timedelay);
+    public function start($request, $asCurrentUser = true, $timedelay = 0) {
+        if (!is_array($request)) {
+            $request = [$request];
+        }
+        list($route, $params) = $this->requestToRoute($request);
+        $status = ['request' => json_encode($request)];
+        if ($timedelay > 0) {
+            $status['start_time'] = date('Y-m-d H:i:s', time() + $timedelay);
+        }
+        $jobId = $this->createStatus($status);
+
+        $params['_e_back_job_monitor'] = 'yes';
+        $params['_e_back_job_id'] = $jobId;
+
+        $return = $this->doRequest($route, $params, $asCurrentUser, true);
+
+        if ($return !== true) {
+            $this->fail(['status_text' => $return], $jobId);
+        }
+        return $jobId;
     }
 
     /**
@@ -515,7 +535,9 @@ class EBackJob extends CApplicationComponent {
 
         if ($job['request']) {
             $request = json_decode($job['request'], true);
-            $result = $this->runAction($request, $jobId);
+            list($route, $params) = $this->requestToRoute($request);
+            $params['_e_back_job_id'] = $jobId;
+            $result = $this->doRequest($route, $params);
 
             if ($result !== true) {
                 $job = $this->getStatus($jobId);
@@ -534,51 +556,6 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Start a new monitor and run it in the background
-     *
-     * @param  string|array $request The request (as array or route-string)
-     * @param  bool Run job as the current user? (Default = true)
-     * @param  int $timedelay Seconds to postpone
-     * @return string Job-ID: the job id through which the job can be monitored
-     */
-    protected function runMonitor($request, $asCurrentUser = true, $timedelay = 0) {
-        if (!is_array($request)) {
-            $request = [$request];
-        }
-        list($route, $params) = $this->requestToRoute($request);
-        $status = ['request' => json_encode($request)];
-        if ($timedelay > 0) {
-            $status['start_time'] = date('Y-m-d H:i:s', time() + $timedelay);
-        }
-        $jobId = $this->createStatus($status);
-
-        $params['_e_back_job_monitor_id'] = $jobId;
-        $params['_e_back_job_id'] = $jobId;
-
-        $return = $this->doRequest($route, $params, $asCurrentUser, true);
-
-        if ($return !== true) {
-            $this->fail(['status_text' => $return], $jobId);
-        }
-        return $jobId;
-    }
-
-    /**
-     * Start a new job and run it in the foreground (this is run from within the
-     * monitor)
-     *
-     * @param  string|array $request The request (as array or route-string)
-     * @param  bool Run job as the current user? (Default = true)
-     * @return string Job-ID: the job id through which the job can be monitored
-     */
-    protected function runAction($request, $jobId) {
-        list($route, $params) = $this->requestToRoute($request);
-        $params['_e_back_job_id'] = $jobId;
-
-        return $this->doRequest($route, $params);
-    }
-
-    /**
      * Make a request to the specified route
      *
      * @param  string $route Yii route to the action to run
@@ -586,7 +563,7 @@ class EBackJob extends CApplicationComponent {
      * @param  bool Run job as the current user? (Default = true)
      * @return bool|string Returns either error message or true
      */
-    protected function doRequest($route, $request = [], $asCurrentUser = true, $async = false) {
+    private function doRequest($route, $request = [], $asCurrentUser = true, $async = false) {
         $method = $request['backjobMethod'] ?? 'GET';
 
         if (Yii::app()->request->enableCsrfValidation && $method == 'POST') {
@@ -688,15 +665,15 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * We're an internal request if localhost made the request and we have the
-     * url-id for a job
+     * Checks whether the request parameter contains the job Id and a matching
+     * checksum, to make sure we are in an internal request made by this class.
      *
      * @return bool
      */
-    public function isInternalRequest() {
-        return (isset($_REQUEST['_e_back_job_id']) &&
-                isset($_REQUEST['_e_back_job_check']) &&
-                $_REQUEST['_e_back_job_check'] === md5($_REQUEST['_e_back_job_id'] . $this->key));
+    private function isInternalRequest() {
+        $jobId = $_REQUEST['_e_back_job_id'] ?? '';
+        $hash = $_REQUEST['_e_back_job_check'] ?? '';
+        return $hash === md5($jobId . $this->key);
     }
 
     /**
@@ -705,7 +682,16 @@ class EBackJob extends CApplicationComponent {
      * @return bool
      */
     private function isMonitorRequest() {
-        return $this->isInternalRequest() && isset($_GET['_e_back_job_monitor_id']);
+        return isset($_GET['_e_back_job_monitor']) && $this->isInternalRequest();
+    }
+
+    /**
+     * Checks whether we are running in the background worker request.
+     *
+     * @return bool
+     */
+    public function isWorkerRequest() {
+        return !isset($_GET['_e_back_job_monitor']) && $this->isInternalRequest();
     }
 
     /**

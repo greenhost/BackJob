@@ -326,39 +326,39 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Update a job's status by incrementing the status by $amount
+     * Update a job's status by incrementing the progress by $amount
      *
-     * @param array|int $status
+     * @param int $amount
      * @param int $jobId
      */
     public function updateIncrement($amount, $jobId = false) {
         if (!$jobId) {
             $jobId = $this->currentJobId;
         }
-        $st = $this->getStatus($jobId);
-        $this->update($amount + $st['progress']);
+        $oldStatus = $this->getStatus($jobId);
+        $oldProgress = $oldStatus['progress'];
+        $this->update(['progress' => $oldProgress + $amount]);
     }
 
     /**
      * Finish a job (alias for "update as finished")
      *
+     * @param string|array $status
      * @param int $jobId
-     * @param array $status
      */
     public function finish($status = [], $jobId = false) {
+        if (is_string($status)) {
+            $status = ['status_text' => $status];
+        }
         if (!$jobId) {
             $jobId = $this->currentJobId;
         }
         $job = $this->getStatus($jobId);
         if ($job['status'] < self::STATUS_COMPLETED) {
-            $this->update(array_merge(
-                [
-                    'progress' => 100,
-                    'end_time' => date('Y-m-d H:i:s'),
-                    'status' => self::STATUS_COMPLETED,
-                ],
-                $status
-            ), $jobId);
+            $status['progress'] = 100;
+            $status['end_time'] = date('Y-m-d H:i:s');
+            $status['status'] = self::STATUS_COMPLETED;
+            $this->update($status, $jobId);
         }
         $this->cleanDb(); // cleanup of Old items
     }
@@ -553,6 +553,7 @@ class EBackJob extends CApplicationComponent {
      * @param  string $route Yii route to the action to run
      * @param  array $request Optional array of GET/POST parameters
      * @param  bool Run job as the current user? (Default = true)
+     * @param  bool $async whether to return immediately and not wait for results
      * @return bool|string Returns either error message or true
      */
     private function doRequest($route, $request = [], $asCurrentUser = true, $async = false) {

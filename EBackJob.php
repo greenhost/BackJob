@@ -193,9 +193,7 @@ class EBackJob extends CApplicationComponent {
     public function endRequest($event) {
         $content = ob_get_clean();
         if ($error = Yii::app()->errorHandler->error) {
-            $this->fail([
-                'status_text' => $content . var_export($error['message'], true)
-            ]);
+            $this->fail($content . var_export($error['message'], true));
         } else {
             $this->finish(['status_text' => $content]);
         }
@@ -234,7 +232,7 @@ class EBackJob extends CApplicationComponent {
         if ($jobId && $uncompleted && $timedOut) {
             $error = "<strong>Error: job timeout</strong>";
             $text = $ret['status_text'] .  "<br/>" . $error;
-            $this->fail(["status_text" => $text], $jobId);
+            $this->fail($text, $jobId);
             $ret = $this->getStatus($jobId);
         }
 
@@ -293,7 +291,7 @@ class EBackJob extends CApplicationComponent {
         $return = $this->doRequest($route, $params, $asCurrentUser, true);
 
         if ($return !== true) {
-            $this->fail(['status_text' => $return], $jobId);
+            $this->fail(strval($return), $jobId);
         }
         return $jobId;
     }
@@ -368,8 +366,8 @@ class EBackJob extends CApplicationComponent {
     /**
      * Fail a job (alias for "update as finished with a fail status")
      *
+     * @param string|array $status
      * @param int $jobId
-     * @param array $status
      */
     public function fail($status = [], $jobId = false) {
         if (is_string($status)) {
@@ -378,13 +376,9 @@ class EBackJob extends CApplicationComponent {
         if (!$jobId) {
             $jobId = $this->currentJobId;
         }
-        $this->update(array_merge(
-            [
-                'end_time' => date('Y-m-d H:i:s'),
-                'status' => self::STATUS_FAILED,
-            ],
-            $status
-        ), $jobId);
+        $status['end_time'] = date('Y-m-d H:i:s');
+        $status['status'] = self::STATUS_FAILED;
+        $this->update($status, $jobId);
         Yii::app()->end();
     }
 
@@ -541,15 +535,13 @@ class EBackJob extends CApplicationComponent {
 
             if ($result !== true) {
                 $job = $this->getStatus($jobId);
-                $this->fail([
-                    'status_text' => $job['status_text'] . '<br>' . $result
-                ]);
+                $this->fail($job['status_text'] . '<br>' . $result);
             }
             // Make sure it's finished if it's not finished or failed already:
             $this->finish();
         } else {
-            $msg = 'Error: Request not found' . $jobId . var_export($job, true);
-            $this->fail(['status_text' => $msg]);
+            $data = var_export($job, true);
+            $this->fail("Error: Request for job $jobId not found: $data");
         }
 
         Yii::app()->end();

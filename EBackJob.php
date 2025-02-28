@@ -191,7 +191,7 @@ class EBackJob extends CApplicationComponent {
         if (isset(Yii::app()->log->routes['cweb'])) {
             Yii::app()->log->routes['cweb']->enabled = false;
         }
-        $this->updateProgress(0);
+        $this->update(0);
         ob_start();
     }
 
@@ -353,29 +353,13 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Update a job's progress and optionally the status text
+     * Resets the job's updated time and optionally changes the progress
+     * percentage and/or status text
      *
-     * @param array|int $status an array or a progress percentage
-     *
-     * @deprecated since version 0.61, use updateProgress() instead
+     * @param int|null $progress percentage done or NULL to not change it
+     * @param string|null $statusText message or NULL to use the buffer contents
      */
-    public function update($status = []) {
-        if (!is_array($status)) {
-            $status = ['progress' => $status];
-        }
-        $this->updateProgress(
-            $status['progress'] ?? null,
-            $status['status_text'] ?? null
-        );
-    }
-
-    /**
-     * Update a job's progress and optionally the status text
-     *
-     * @param int|null $progress percentage done
-     * @param string|null $optional status text
-     */
-    public function updateProgress($progress = null, $statusText = null) {
+    public function update($progress = null, $statusText = null) {
         $fields = [];
         if (!is_null($progress)) {
             $progress = min(100, max(0, $progress));
@@ -388,13 +372,15 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Update a job's progress by incrementing the percentage done
+     * Resets the job's updated time, increments the progress percentage and
+     * optionally changes the status text
      *
      * @param int $increment the desired percentage increment
+     * @param string|null $statusText message or NULL to use the buffer contents
      */
-    public function incrementProgress($increment) {
+    public function incrementProgress($increment, $statusText = null) {
         $job = $this->getJob($this->currentJobId);
-        $this->updateProgress($job['progress'] + $increment);
+        $this->update($job['progress'] + $increment, $statusText);
     }
 
     /**

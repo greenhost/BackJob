@@ -112,16 +112,16 @@ update its progress both by echoing and setting the progress counter:
 
 ~~~php
 echo "Starting 1<br/>";
-Yii::app()->background->updateProgress(20);
+Yii::app()->background->update(20);
 do_long_function1();
 echo "Processing 2<br/>";
-Yii::app()->background->updateProgress(60);
+Yii::app()->background->update(60);
 if(!do_long_function2()){
     echo "Error occurred!";
     Yii::app()->background->fail(); // this also ends the application immediately!
 }
 echo "Finishing 3<br/>";
-Yii::app()->background->updateProgress(90);
+Yii::app()->background->update(90);
 do_last_function3();
 echo "Done<br/>";
 ~~~
@@ -130,7 +130,7 @@ If you don't want a list or log of echoed text, but replace it, you can use the
 update function like this, but make sure that you also finish manually.
 
 ~~~php
-Yii::app()->background->updateProgress(60, 'Chugging along now');
+Yii::app()->background->update(60, 'Chugging along now');
 Yii::app()->background->finish('And done');
 ~~~
 
@@ -176,17 +176,17 @@ class testController extends Controller {
     }
 
     public function actionTestbackground(){
-        Yii::app()->background->updateProgress(1);
+        Yii::app()->background->update(1);
         echo "Job started.";
         sleep(3);
-        Yii::app()->background->updateProgress(20);
+        Yii::app()->background->update(20);
         sleep(3);
-        Yii::app()->background->updateProgress(40);
+        Yii::app()->background->update(40);
         echo "Job in progress.";
         sleep(3);
-        Yii::app()->background->updateProgress(60);
+        Yii::app()->background->update(60);
         sleep(3);
-        Yii::app()->background->updateProgress(80);
+        Yii::app()->background->update(80);
         sleep(3);
         echo "Job done.";
         Yii::app()->end();
@@ -201,9 +201,9 @@ The client session can call these methods:
 - `getStatus()` to get the status of an existing background job
 
 The worker session can call these methods:
-- `updateProgress()` to set a progress percentage and store the current output
-  buffer contents in the database.
-- `incrementProgress()` same as `updateProgress()` but with an integer increment
+- `update()` to set a progress percentage and store the current output buffer
+  contents in the database.
+- `incrementProgress()` same as `update()` but with an integer increment
 - `finish()` and `fail()` although they would get called at the end of the
   request anyway, depending on wheter there was an error.
 
@@ -230,6 +230,8 @@ should typically be a controller action written for background work.
 
 ## Changelog
 
+- **0.62**
+    - Reinstate update() with a different signature and remove updateProgress()
 - **0.61.1**
     - Allow status updates without progress or text
 - **0.61**

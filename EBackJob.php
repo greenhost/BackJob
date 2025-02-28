@@ -46,18 +46,18 @@ class EBackJob extends CApplicationComponent {
     public const STATUS_FAILED = 3;
 
     /**
-     * Database connection
+     * Name of the database connection component in this Yii application
      *
      * @var string
      */
-    public $db = 'db';
+    public $databaseComponent = 'db';
 
     /**
-     * Cache to be used
+     * Name of the cache component in this the Yii application
      *
      * @var string
      */
-    public $ch = 'cache';
+    public $cacheComponent = 'cache';
 
     /**
      * Should we use the cache?
@@ -139,15 +139,26 @@ class EBackJob extends CApplicationComponent {
      */
     public $key = 'sjs&sk&F89fksL*987sdKf';
 
-    private $_db;
-    private $_ch;
+    /**
+     * Connection to the database
+     *
+     * @var CDbConnection
+     */
+    private $databaseConnection;
+
+    /**
+     * Cache storage mechanism
+     *
+     * @var ICache
+     */
+    private $cacheStorage;
 
     /**
      * Initialize properties.
      */
     public function init() {
         if ($this->useDb && $this->checkAndCreateTable) {
-            if (!$this->database->schema->getTable($this->tableName)) {
+            if (!$this->getDatabase()->schema->getTable($this->tableName)) {
                 $this->createTable();
             }
         }
@@ -244,23 +255,25 @@ class EBackJob extends CApplicationComponent {
      * the cache, but is in the database, it's added to the cache.
      *
      * @param  int $jobId the unique ID of the job
-     * @return bool|array the job if it's found, otherwise false.
+     * @return array|false the job if it's found, otherwise false.
      */
     public function getExistingJob($jobId) {
+        if (!$jobId) {
+            return false;
+        }
         $ret = false;
-        if ($jobId) {
-            if ($this->useCache) {
-                $ret = $this->cache[$this->cachePrefix . $jobId];
-            }
-            if (!$ret && $this->useDb) {
-                $ret = $this->database->createCommand()
-                    ->select('*')
-                    ->from($this->tableName)
-                    ->where('id=:id')->queryRow(true, [':id' => $jobId]);
-                if ($ret && $this->useCache) {
-                    // Update the cache with all the data
-                    $this->cache[$this->cachePrefix . $jobId] = $ret;
-                }
+        if ($this->useCache) {
+            $ret = $this->getCache()->get($this->cachePrefix . $jobId);
+        }
+        if (!$ret && $this->useDb) {
+            $ret = $this->getDatabase()->createCommand()
+                ->select('*')
+                ->from($this->tableName)
+                ->where('id=:id')
+                ->queryRow(true, [':id' => $jobId]);
+            if ($ret && $this->useCache) {
+                // Update the cache with all the data
+                $this->getCache()->set($this->cachePrefix . $jobId, $ret);
             }
         }
         return $ret;
@@ -306,22 +319,28 @@ class EBackJob extends CApplicationComponent {
         if (!$jobId) {
             $jobId = $this->currentJobId;
         }
+        if (!$jobId) {
+            return;
+        }
+
+        $status = array_merge(
+            [
+                'updated_time'  => date('Y-m-d H:i:s'),
+                'status'        => self::STATUS_INPROGRESS,
+                'status_text'   => ob_get_contents(),
+            ],
+            $status
+        );
 
         $args = var_export($status, true);
         $msg = "Updating status for job: $jobId args: $args";
         Yii::trace($msg, "application.EBackJob");
-        if ($jobId) {
-            if (!is_array($status)) {
-                $status = ['progress' => $status];
-            }
-            $this->setStatus($jobId, array_merge(
-                [
-                    'updated_time' => date('Y-m-d H:i:s'),
-                    'status' => self::STATUS_INPROGRESS,
-                    'status_text' => ob_get_contents(),
-                ],
-                $status
-            ));
+
+        if ($this->useCache) {
+            $this->updateCache($jobId, $status);
+        }
+        if ($this->useDb) {
+            $this->updateDatabase($jobId, $status);
         }
     }
 
@@ -383,71 +402,58 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Set status of a certain job
-     *
-     * @param int $jobId
-     * @param array $status
-     */
-    public function setStatus($jobId, $status) {
-        if ($this->useCache) {
-            $this->setCacheStatus($jobId, $status);
-        }
-        if ($this->useDb) {
-            $this->setDbStatus($jobId, $status);
-        }
-    }
-
-    /**
      * Get database that was configured
      *
      * @return CDbConnection
      */
     public function getDatabase() {
-        if (!isset($this->_db)) {
-            $db = $this->db;
-            $this->_db = Yii::app()->$db;
+        if (!isset($this->databaseConnection)) {
+            $componentName = $this->databaseComponent;
+            $this->databaseConnection = Yii::app()->$componentName;
         }
-        return $this->_db;
+        return $this->databaseConnection;
     }
 
     /**
      * Get Cache that was configured
      *
-     * @return CCache
+     * @return ICache
      */
 
     public function getCache() {
-        if (!isset($this->_ch)) {
-            $cache = $this->ch;
-            $this->_ch = Yii::app()->$cache;
+        if (!isset($this->cacheStorage)) {
+            $componentName = $this->cacheComponent;
+            $this->cacheStorage = Yii::app()->$componentName;
         }
-        return $this->_ch;
+        return $this->cacheStorage;
     }
 
     /**
-     * Perform status changes to cache
+     * Puts the new status values into the cache storage
      *
      * @param int $jobId
      * @param array $status
      */
-    private function setCacheStatus($jobId, $status) {
-        $a = $this->cache[$this->cachePrefix . $jobId];
-        if (!$a) {
-            $a = [];
+    private function updateCache($jobId, $status) {
+        $cacheId = $this->cachePrefix . $jobId;
+        $oldStatus = $this->getCache()->get($cacheId);
+        if (!$oldStatus) {
+            $oldStatus = [];
         }
-        $this->cache[$this->cachePrefix . $jobId] = array_merge($a, $status);
+        $this->getCache()->set($cacheId, array_merge($oldStatus, $status));
     }
 
     /**
-     * Perform status changes to database
+     * Puts the new status values into the database
      *
      * @param int $jobId
      * @param array $status
      */
     private function setDbStatus($jobId, $status) {
-        $this->database->createCommand()->update(
+        $this->getDatabase()->createCommand()->update(
             $this->tableName,
-            $status, 'id=:id',
+            $status,
+            'id=:id',
             [':id' => $jobId]
         );
     }
@@ -462,14 +468,14 @@ class EBackJob extends CApplicationComponent {
         $jobId = false;
         $status = array_merge($this->getStatus(false), $status);
         if ($this->useDb) {
-            $this->database->createCommand()->insert($this->tableName, $status);
-            $jobId = $this->database->lastInsertId;
+            $this->getDatabase()->createCommand()->insert($this->tableName, $status);
+            $jobId = $this->getDatabase()->lastInsertId;
         }
         if ($this->useCache) {
             if (!$jobId) {
                 $jobId = $this->getNewCacheId();
             }
-            $this->setCacheStatus($jobId, $status);
+            $this->updateCache($jobId, $status);
         }
         return $jobId;
     }
@@ -480,22 +486,25 @@ class EBackJob extends CApplicationComponent {
      * @return int
      */
     private function getNewCacheId() {
-        $cid = $this->cachePrefix . 'maxid';
-        if (!$this->cache[$cid]) {
-            $this->cache[$cid] = 0;
+        // The last used job Id is also stored in cache:
+        $maxIdCacheId = $this->cachePrefix . 'maxid';
+        // If it is absent in the cache, set it to zero:
+        $this->getCache()->add($maxIdCacheId, 0);
+        $jobId = $this->getCache()->get($maxIdCacheId);
+        // Loop over all existing jobs to increase the maximum Id:
+        while ($this->getCache()->get($this->cachePrefix . $jobId)) {
+            $jobId += 1;
+            $this->getCache()->set($maxIdCacheId, $jobId);
         }
-        while ($this->cache[$this->cachePrefix . $this->cache[$cid]]) {
-            $this->cache[$cid] = $this->cache[$cid] + 1;
-        }
-        return $this->cache[$cid];
+        return $this->cachePrefix . $jobId;
     }
 
     /**
      * Create the table used for storing jobs DB-side.
      */
     private function createTable() {
-        $this->database->createCommand(
-            $this->database->schema->createTable(
+        $this->getDatabase()->createCommand(
+            $this->getDatabase()->schema->createTable(
                 $this->tableName,
                 [
                     'id' => 'pk',
@@ -713,7 +722,7 @@ class EBackJob extends CApplicationComponent {
     private function cleanDb() {
         $historyStart = 'DATE_SUB(NOW(), INTERVAL :history DAY)';
         if ($this->useDb && $this->backlogDays) {
-            $this->database->createCommand()->delete(
+            $this->getDatabase()->createCommand()->delete(
                 $this->tableName,
                 "end_time < $historyStart AND status = :status AND end_time != 0",
                 [
@@ -723,7 +732,7 @@ class EBackJob extends CApplicationComponent {
             );
         }
         if ($this->useDb && $this->allBacklogDays) {
-            $this->database->createCommand()->delete(
+            $this->getDatabase()->createCommand()->delete(
                 $this->tableName,
                 "end_time < $historyStart AND end_time != 0",
                 [':history' => $this->backlogDays]

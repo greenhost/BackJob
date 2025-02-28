@@ -191,7 +191,7 @@ class EBackJob extends CApplicationComponent {
         if (isset(Yii::app()->log->routes['cweb'])) {
             Yii::app()->log->routes['cweb']->enabled = false;
         }
-        $this->update(['progress' => 0]);
+        $this->updateProgress(0);
         ob_start();
     }
 
@@ -210,43 +210,60 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Returns current status of the background job as an array with keys
-     * ('progress','status_text','status') If the job does not exist yet, the
-     * default values are returned.
+     * Returns the current status of the background job and marks it as failed
+     * if the execution has timed out.
      *
      * @param  int $jobId
-     * @return array The status of this job
+     * @return array The progress, status and status_text of this job
      */
     public function getStatus($jobId) {
-        // Get job from either cache or DB
-        $ret = $this->getExistingJob($jobId);
+        $job = $this->getJob($jobId);
 
-        if (!is_array($ret)) {
-            $ret = [];
+        // Only make these fields publicly available:
+        return [
+            'progress'      => $job['progress'],
+            'status'        => $job['status'],
+            'status_text'   => $job['status_text'],
+        ];
+    }
+
+    /**
+     * Fetches the job from storage and marks it as failed if the execution has
+     * timed out.
+     *
+     * @param  int $jobId
+     * @return array the job
+     */
+    private function getJob($jobId) {
+        // Get job from either cache or DB
+        $job = $this->getExistingJob($jobId);
+
+        if (!is_array($job)) {
+            $job = [];
         }
 
         // also set defaults
-        $ret = array_merge([
+        $job = array_merge([
             'progress' => 0,
             'status' => self::STATUS_STARTED,
             'start_time' => date('Y-m-d H:i:s'),
             'updated_time' => date('Y-m-d H:i:s'),
             'status_text' => '',
             'request' => ''
-        ], $ret);
+        ], $job);
 
         // Check for a timeout error
-        $uncompleted = $ret['status'] < self::STATUS_COMPLETED;
-        $lastUpdate = strtotime($ret['updated_time']);
+        $uncompleted = $job['status'] < self::STATUS_COMPLETED;
+        $lastUpdate = strtotime($job['updated_time']);
         $timedOut = ($lastUpdate + $this->errorTimeout) < time();
         if ($jobId && $uncompleted && $timedOut) {
             $error = "<strong>Error: job timeout</strong>";
-            $text = $ret['status_text'] .  "<br/>" . $error;
+            $text = $job['status_text'] .  "<br/>" . $error;
             $this->fail($text, $jobId);
-            $ret = $this->getStatus($jobId);
+            $job = $this->getJob($jobId);
         }
 
-        return $ret;
+        return $job;
     }
 
     /**
@@ -260,22 +277,22 @@ class EBackJob extends CApplicationComponent {
         if (!$jobId) {
             return false;
         }
-        $ret = false;
+        $job = false;
         if ($this->useCache) {
-            $ret = $this->getCache()->get($this->cachePrefix . $jobId);
+            $job = $this->getCache()->get($this->cachePrefix . $jobId);
         }
-        if (!$ret && $this->useDb) {
-            $ret = $this->getDatabase()->createCommand()
+        if (!$job && $this->useDb) {
+            $job = $this->getDatabase()->createCommand()
                 ->select('*')
                 ->from($this->tableName)
                 ->where('id=:id')
                 ->queryRow(true, [':id' => $jobId]);
-            if ($ret && $this->useCache) {
+            if ($job && $this->useCache) {
                 // Update the cache with all the data
-                $this->getCache()->set($this->cachePrefix . $jobId, $ret);
+                $this->getCache()->set($this->cachePrefix . $jobId, $job);
             }
         }
-        return $ret;
+        return $job;
     }
 
     /**
@@ -287,7 +304,7 @@ class EBackJob extends CApplicationComponent {
      * @return int Id of the new job
      */
     public function start($request, $asCurrentUser = true, $timedelay = 0) {
-        $jobId = $this->createStatus($request, $timedelay);
+        $jobId = $this->createJob($request, $timedelay);
 
         list($route, $params) = $this->requestToRoute($request);
         $params['_e_back_job_monitor'] = 'yes';
@@ -302,73 +319,106 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Update a job's status
+     * Update some or all fields of a job in storage
      *
-     * @param array|int $status a status array or a progress percentage
+     * @param array $fields the fields that must be updated
      * @param int $jobId
      */
-    public function update($status = [], $jobId = false) {
+    private function updateJob($fields = [], $jobId = false) {
         if (!$jobId) {
             $jobId = $this->currentJobId;
         }
         if (!$jobId) {
             return;
         }
-        if (!is_array($status)) {
-            $status = ['progress' => $status];
-        }
 
-        $status = array_merge(
+        $fields = array_merge(
             [
                 'updated_time'  => date('Y-m-d H:i:s'),
                 'status'        => self::STATUS_INPROGRESS,
                 'status_text'   => ob_get_contents(),
             ],
-            $status
+            $fields
         );
 
-        $args = var_export($status, true);
-        $msg = "Updating status for job: $jobId args: $args";
+        $msg = "Updating job $jobId with fields: " . var_export($fields, true);
         Yii::trace($msg, "application.EBackJob");
 
         if ($this->useCache) {
-            $this->updateCache($jobId, $status);
+            $this->updateCache($jobId, $fields);
         }
         if ($this->useDb) {
-            $this->updateDatabase($jobId, $status);
+            $this->updateDatabase($jobId, $fields);
         }
     }
 
     /**
-     * Update a job's status by incrementing the progress percentage
+     * Update a job's progress and optionally the status text
      *
-     * @param int $percentage the desired percentage increment
+     * @param array|int $status an array or a progress percentage
+     *
+     * @deprecated since version 0.61, use updateProgress() instead
      */
-    public function incrementProgress($percentage) {
-        $status = $this->getStatus($this->currentJobId);
-        $progress = min(100, max(0, $status['progress'] + $percentage));
-        $this->update(['progress' => intval(round($progress))]);
+    public function update($status = []) {
+        if (!is_array($status)) {
+            $status = ['progress' => $status];
+        }
+        $this->updateProgress(
+            $status['progress'] ?? 0,
+            $status['status_text'] ?? ''
+        );
+    }
+
+    /**
+     * Update a job's progress and optionally the status text
+     *
+     * @param int $progress percentage done
+     * @param string $optional status text
+     */
+    public function updateProgress($progress, $statusText = '') {
+        $progress = min(100, max(0, $progress));
+        $fields = ['progress' => intval(round($progress))];
+        if ($statusText !== '') {
+            $fields['status_text'] = $statusText;
+        }
+        $this->updateJob($fields);
+    }
+
+    /**
+     * Update a job's progress by incrementing the percentage done
+     *
+     * @param int $increment the desired percentage increment
+     */
+    public function incrementProgress($increment) {
+        $job = $this->getJob($this->currentJobId);
+        $this->updateProgress($job['progress'] + $increment);
     }
 
     /**
      * Finish a job (alias for "update as finished")
      *
-     * @param string|array $status
-     * @param int $jobId
+     * @param string $statusText
+     * @param int|false $jobId
      */
-    public function finish($status = [], $jobId = false) {
-        if (is_string($status)) {
-            $status = ['status_text' => $status];
+    public function finish($statusText = '', $jobId = false) {
+        // Backwards compatibility:
+        if (is_array($statusText)) {
+            $statusText = $statusText['status_text'] ?? '';
         }
         if (!$jobId) {
             $jobId = $this->currentJobId;
         }
-        $job = $this->getStatus($jobId);
+        $job = $this->getJob($jobId);
         if ($job['status'] < self::STATUS_COMPLETED) {
-            $status['progress'] = 100;
-            $status['end_time'] = date('Y-m-d H:i:s');
-            $status['status'] = self::STATUS_COMPLETED;
-            $this->update($status, $jobId);
+            $fields = [
+                'progress'  => 100,
+                'end_time'  => date('Y-m-d H:i:s'),
+                'status'    => self::STATUS_COMPLETED
+            ];
+            if ($statusText !== '') {
+                $fields['status_text'] = $statusText;
+            }
+            $this->updateJob($fields, $jobId);
         }
         $this->cleanDb(); // cleanup of Old items
     }
@@ -376,19 +426,25 @@ class EBackJob extends CApplicationComponent {
     /**
      * Fail a job (alias for "update as finished with a fail status")
      *
-     * @param string|array $status
-     * @param int $jobId
+     * @param string $statusText
+     * @param int|false $jobId
      */
-    public function fail($status = [], $jobId = false) {
-        if (is_string($status)) {
-            $status = ['status_text' => $status];
+    public function fail($statusText = '', $jobId = false) {
+        // Backwards compatibility:
+        if (is_array($statusText)) {
+            $statusText = $statusText['status_text'] ?? '';
         }
         if (!$jobId) {
             $jobId = $this->currentJobId;
         }
-        $status['end_time'] = date('Y-m-d H:i:s');
-        $status['status'] = self::STATUS_FAILED;
-        $this->update($status, $jobId);
+        $fields = [
+            'end_time'  => date('Y-m-d H:i:s'),
+            'status'    => self::STATUS_FAILED
+        ];
+        if ($statusText !== '') {
+            $fields['status_text'] = $statusText;
+        }
+        $this->updateJob($fields, $jobId);
         Yii::app()->end();
     }
 
@@ -420,48 +476,48 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Puts the new status values into the cache storage
+     * Updates some or all fields of a job in the cache storage
      *
      * @param int $jobId
-     * @param array $status
+     * @param array $fields
      */
-    private function updateCache($jobId, $status) {
+    private function updateCache($jobId, $fields) {
         $cacheId = $this->cachePrefix . $jobId;
-        $oldStatus = $this->getCache()->get($cacheId);
-        if (!$oldStatus) {
-            $oldStatus = [];
+        $job = $this->getCache()->get($cacheId);
+        if ($job) {
+            $fields = array_merge($job, $fields);
         }
-        $this->getCache()->set($cacheId, array_merge($oldStatus, $status));
+        $this->getCache()->set($cacheId, $fields);
     }
 
     /**
-     * Puts the new status values into the database
+     * Updates some or all fields of a job in the database
      *
      * @param int $jobId
-     * @param array $status
+     * @param array $fields
      */
-    private function updateDatabase($jobId, $status) {
+    private function updateDatabase($jobId, $fields) {
         $this->getDatabase()->createCommand()->update(
             $this->tableName,
-            $status,
+            $fields,
             'id=:id',
             [':id' => $jobId]
         );
     }
 
     /**
-     * Creates a new status and stores it in the database and/or cache
+     * Creates a new job and stores it in the database and/or cache
      *
      * @param  string|array $request Route to controller/action
      * @param  int $timedelay Seconds to postpone
      * @return int the newly created job Id
      */
-    private function createStatus($request, $timedelay = 0) {
+    private function createJob($request, $timedelay = 0) {
         $jobId = false;
         $now = time();
         $timedelay = max(0, $timedelay);
 
-        $status = [
+        $job = [
             'progress'      => 0,
             'status'        => self::STATUS_STARTED,
             'start_time'    => date('Y-m-d H:i:s', $now + $timedelay),
@@ -470,14 +526,14 @@ class EBackJob extends CApplicationComponent {
             'status_text'   => ''
         ];
         if ($this->useDb) {
-            $this->getDatabase()->createCommand()->insert($this->tableName, $status);
+            $this->getDatabase()->createCommand()->insert($this->tableName, $job);
             $jobId = $this->getDatabase()->lastInsertId;
         }
         if ($this->useCache) {
             if (!$jobId) {
                 $jobId = $this->getNewCacheId();
             }
-            $this->updateCache($jobId, $status);
+            $this->updateCache($jobId, $job);
         }
         return $jobId;
     }
@@ -528,10 +584,10 @@ class EBackJob extends CApplicationComponent {
      */
     protected function monitor() {
         $jobId = $this->currentJobId;
-        $job = $this->getStatus($jobId);
+        $job = $this->getJob($jobId);
 
         // If the start time is in the future, wait for that time (and re-check again)
-        while (($job = $this->getStatus($jobId)) && strtotime($job['start_time']) > time()) {
+        while (($job = $this->getJob($jobId)) && strtotime($job['start_time']) > time()) {
             // Calculate how many seconds we should wait before starting:
             $waitTime = strtotime($job['start_time']) - time();
             set_time_limit($this->errorTimeout + $waitTime + 5);
@@ -545,7 +601,7 @@ class EBackJob extends CApplicationComponent {
             $result = $this->doRequest($route, $params);
 
             if ($result !== true) {
-                $job = $this->getStatus($jobId);
+                $job = $this->getJob($jobId);
                 $this->fail($job['status_text'] . '<br>' . $result);
             }
             // Make sure it's finished if it's not finished or failed already:

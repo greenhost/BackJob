@@ -172,7 +172,6 @@ class EBackJob extends CApplicationComponent {
                 $this->monitor();
             } else {
                 // We are the background worker endpoint
-                $this->currentJobId = $_REQUEST['_e_back_job_id'];
                 Yii::app()->onBeginRequest = [$this, 'startRequest'];
                 Yii::app()->onEndRequest = [$this, 'endRequest'];
             }
@@ -206,7 +205,7 @@ class EBackJob extends CApplicationComponent {
         if ($error = Yii::app()->errorHandler->error) {
             $this->fail($content . var_export($error['message'], true));
         } else {
-            $this->finish(['status_text' => $content]);
+            $this->finish($content);
         }
     }
 
@@ -283,21 +282,14 @@ class EBackJob extends CApplicationComponent {
      * Starts a new background job and returns ID of that job.
      *
      * @param  string|array $request Route to controller/action
-     * @param  bool Run job as the current user? (Default = true)
+     * @param  bool $asCurrentUser run job as the current user? (Default = true)
      * @param  int $timedelay Seconds to postpone
      * @return int Id of the new job
      */
     public function start($request, $asCurrentUser = true, $timedelay = 0) {
-        if (!is_array($request)) {
-            $request = [$request];
-        }
-        list($route, $params) = $this->requestToRoute($request);
-        $status = ['request' => json_encode($request)];
-        if ($timedelay > 0) {
-            $status['start_time'] = date('Y-m-d H:i:s', time() + $timedelay);
-        }
-        $jobId = $this->createStatus($status);
+        $jobId = $this->createStatus($request, $timedelay);
 
+        list($route, $params) = $this->requestToRoute($request);
         $params['_e_back_job_monitor'] = 'yes';
         $params['_e_back_job_id'] = $jobId;
 
@@ -322,6 +314,9 @@ class EBackJob extends CApplicationComponent {
         if (!$jobId) {
             return;
         }
+        if (!is_array($status)) {
+            $status = ['progress' => $status];
+        }
 
         $status = array_merge(
             [
@@ -345,18 +340,14 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Update a job's status by incrementing the progress by $amount
+     * Update a job's status by incrementing the progress percentage
      *
-     * @param int $amount
-     * @param int $jobId
+     * @param int $percentage the desired percentage increment
      */
-    public function updateIncrement($amount, $jobId = false) {
-        if (!$jobId) {
-            $jobId = $this->currentJobId;
-        }
-        $oldStatus = $this->getStatus($jobId);
-        $oldProgress = $oldStatus['progress'];
-        $this->update(['progress' => $oldProgress + $amount]);
+    public function incrementProgress($percentage) {
+        $status = $this->getStatus($this->currentJobId);
+        $progress = min(100, max(0, $status['progress'] + $percentage));
+        $this->update(['progress' => intval(round($progress))]);
     }
 
     /**
@@ -449,7 +440,7 @@ class EBackJob extends CApplicationComponent {
      * @param int $jobId
      * @param array $status
      */
-    private function setDbStatus($jobId, $status) {
+    private function updateDatabase($jobId, $status) {
         $this->getDatabase()->createCommand()->update(
             $this->tableName,
             $status,
@@ -459,14 +450,25 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Create a status, returns its ID
+     * Creates a new status and stores it in the database and/or cache
      *
-     * @param  array $status
-     * @return int The new ID
+     * @param  string|array $request Route to controller/action
+     * @param  int $timedelay Seconds to postpone
+     * @return int the newly created job Id
      */
-    private function createStatus($status = []) {
+    private function createStatus($request, $timedelay = 0) {
         $jobId = false;
-        $status = array_merge($this->getStatus(false), $status);
+        $now = time();
+        $timedelay = max(0, $timedelay);
+
+        $status = [
+            'progress'      => 0,
+            'status'        => self::STATUS_STARTED,
+            'start_time'    => date('Y-m-d H:i:s', $now + $timedelay),
+            'updated_time'  => date('Y-m-d H:i:s', $now),
+            'request'       => json_encode($request),
+            'status_text'   => ''
+        ];
         if ($this->useDb) {
             $this->getDatabase()->createCommand()->insert($this->tableName, $status);
             $jobId = $this->getDatabase()->lastInsertId;
@@ -561,7 +563,7 @@ class EBackJob extends CApplicationComponent {
      *
      * @param  string $route Yii route to the action to run
      * @param  array $request Optional array of GET/POST parameters
-     * @param  bool Run job as the current user? (Default = true)
+     * @param  bool $asCurrentUser run job as the current user? (Default = true)
      * @param  bool $async whether to return immediately and not wait for results
      * @return bool|string Returns either error message or true
      */
@@ -710,7 +712,6 @@ class EBackJob extends CApplicationComponent {
             unset($params[0]);
         } else {
             $route = $request;
-            $request = [$route];
         }
         return [$route, $params];
     }

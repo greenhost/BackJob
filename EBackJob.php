@@ -364,21 +364,24 @@ class EBackJob extends CApplicationComponent {
             $status = ['progress' => $status];
         }
         $this->updateProgress(
-            $status['progress'] ?? 0,
-            $status['status_text'] ?? ''
+            $status['progress'] ?? null,
+            $status['status_text'] ?? null
         );
     }
 
     /**
      * Update a job's progress and optionally the status text
      *
-     * @param int $progress percentage done
-     * @param string $optional status text
+     * @param int|null $progress percentage done
+     * @param string|null $optional status text
      */
-    public function updateProgress($progress, $statusText = '') {
-        $progress = min(100, max(0, $progress));
-        $fields = ['progress' => intval(round($progress))];
-        if ($statusText !== '') {
+    public function updateProgress($progress = null, $statusText = null) {
+        $fields = [];
+        if (!is_null($progress)) {
+            $progress = min(100, max(0, $progress));
+            $fields['progress'] = intval(round($progress));
+        }
+        if (!is_null($statusText)) {
             $fields['status_text'] = $statusText;
         }
         $this->updateJob($fields);

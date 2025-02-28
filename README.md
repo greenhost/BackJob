@@ -230,6 +230,8 @@ should typically be a controller action written for background work.
 
 ## Changelog
 
+- **0.61.1**
+    - Allow status updates without progress or text
 - **0.61**
     - Deprecated update() in favour of updateProgress()
     - Reduced the public information given by getStatus()

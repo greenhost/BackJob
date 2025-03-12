@@ -126,18 +126,18 @@ class EBackJob extends CApplicationComponent {
     public $allBacklogDays = 60;
 
     /**
-     * If we're inside a jobrequest, this is the current ID
-     *
-     * @var int
-     */
-    private $currentJobId;
-
-    /**
      * Unique key for your application
      *
      * @var string
      */
     public $key = 'sjs&sk&F89fksL*987sdKf';
+
+    /**
+     * If we're inside a jobrequest, this is the current ID
+     *
+     * @var int
+     */
+    private $currentJobId;
 
     /**
      * Connection to the database
@@ -217,7 +217,7 @@ class EBackJob extends CApplicationComponent {
      * @return array The progress, status and status_text of this job
      */
     public function getStatus($jobId) {
-        $job = $this->getJob($jobId);
+        $job = $this->getCheckedJob($jobId);
 
         // Only make these fields publicly available:
         return [
@@ -229,14 +229,14 @@ class EBackJob extends CApplicationComponent {
 
     /**
      * Fetches the job from storage and marks it as failed if the execution has
-     * timed out.
+     * timed out or returns default values if the job does not exist yet.
      *
      * @param  int $jobId
      * @return array the job
      */
-    private function getJob($jobId) {
+    private function getCheckedJob($jobId) {
         // Get job from either cache or DB
-        $job = $this->getExistingJob($jobId);
+        $job = $this->getJob($jobId);
 
         if (!is_array($job)) {
             $job = [];
@@ -260,10 +260,20 @@ class EBackJob extends CApplicationComponent {
             $error = "<strong>Error: job timeout</strong>";
             $text = $job['status_text'] .  "<br/>" . $error;
             $this->fail($text, $jobId);
-            $job = $this->getJob($jobId);
+            $job = $this->getCheckedJob($jobId);
         }
 
         return $job;
+    }
+
+    /**
+     * Returns whether a job exists with the specified Id
+     *
+     * @param  int $jobId the unique ID of the job
+     * @return bool whether a job exists with thee specified Id
+     */
+    public function jobExists($jobId) {
+        return $this->getJob($jobId) !== false;
     }
 
     /**
@@ -273,7 +283,7 @@ class EBackJob extends CApplicationComponent {
      * @param  int $jobId the unique ID of the job
      * @return array|false the job if it's found, otherwise false.
      */
-    public function getExistingJob($jobId) {
+    private function getJob($jobId) {
         if (!$jobId) {
             return false;
         }
@@ -356,7 +366,7 @@ class EBackJob extends CApplicationComponent {
      * Resets the job's updated time and optionally changes the progress
      * percentage and/or status text
      *
-     * @param int|null $progress percentage done or NULL to not change it
+     * @param int|float|null $progress percentage done or NULL to not change it
      * @param string|null $statusText message or NULL to use the buffer contents
      */
     public function update($progress = null, $statusText = null) {
@@ -379,7 +389,7 @@ class EBackJob extends CApplicationComponent {
      * @param string|null $statusText message or NULL to use the buffer contents
      */
     public function incrementProgress($increment, $statusText = null) {
-        $job = $this->getJob($this->currentJobId);
+        $job = $this->getCheckedJob($this->currentJobId);
         $this->update($job['progress'] + $increment, $statusText);
     }
 
@@ -397,7 +407,7 @@ class EBackJob extends CApplicationComponent {
         if (!$jobId) {
             $jobId = $this->currentJobId;
         }
-        $job = $this->getJob($jobId);
+        $job = $this->getCheckedJob($jobId);
         if ($job['status'] < self::STATUS_COMPLETED) {
             $fields = [
                 'progress'  => 100,
@@ -442,7 +452,7 @@ class EBackJob extends CApplicationComponent {
      *
      * @return CDbConnection
      */
-    public function getDatabase() {
+    private function getDatabase() {
         if (!isset($this->databaseConnection)) {
             $componentName = $this->databaseComponent;
             $this->databaseConnection = Yii::app()->$componentName;
@@ -456,7 +466,7 @@ class EBackJob extends CApplicationComponent {
      * @return ICache
      */
 
-    public function getCache() {
+    private function getCache() {
         if (!isset($this->cacheStorage)) {
             $componentName = $this->cacheComponent;
             $this->cacheStorage = Yii::app()->$componentName;
@@ -573,10 +583,10 @@ class EBackJob extends CApplicationComponent {
      */
     protected function monitor() {
         $jobId = $this->currentJobId;
-        $job = $this->getJob($jobId);
+        $job = $this->getCheckedJob($jobId);
 
         // If the start time is in the future, wait for that time (and re-check again)
-        while (($job = $this->getJob($jobId)) && strtotime($job['start_time']) > time()) {
+        while (($job = $this->getCheckedJob($jobId)) && strtotime($job['start_time']) > time()) {
             // Calculate how many seconds we should wait before starting:
             $waitTime = strtotime($job['start_time']) - time();
             set_time_limit($this->errorTimeout + $waitTime + 5);
@@ -590,7 +600,7 @@ class EBackJob extends CApplicationComponent {
             $result = $this->doRequest($route, $params);
 
             if ($result !== true) {
-                $job = $this->getJob($jobId);
+                $job = $this->getCheckedJob($jobId);
                 $this->fail($job['status_text'] . '<br>' . $result);
             }
             // Make sure it's finished if it's not finished or failed already:

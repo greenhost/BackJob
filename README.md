@@ -34,7 +34,7 @@ composer.json file:
     }
 ],
 "require": {
-    "greenhost/backjob": "^0.61"
+    "greenhost/backjob": "^0.63"
 },
 ~~~
 
@@ -84,13 +84,11 @@ Starting a background job only requires a valid route to that controller/action.
 ~~~php
 $jobId = Yii::app()->background->start('site/longJob');
 // Or, with parameters:
-$jobWithParams = Yii::app()->background->start(
-    [
-        'site/paramJob', 
-        'id' => $id, 
-        'param2' => true
-	]
-);
+$jobWithParams = Yii::app()->background->start([
+    'site/paramJob',
+    'id' => $id, 
+    'param2' => true
+]);
 ~~~
 
 Then you'll probably want to use a time-intervaled ajax request to get the
@@ -230,6 +228,10 @@ should typically be a controller action written for background work.
 
 ## Changelog
 
+- **0.63**
+    - Replace getExistingJob() with jobExists() method
+    - Make getDatabase() and getCache() private
+    - Minor documentation corrections
 - **0.62**
     - Reinstate update() with a different signature and remove updateProgress()
 - **0.61.1**

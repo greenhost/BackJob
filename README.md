@@ -228,6 +228,8 @@ should typically be a controller action written for background work.
 
 ## Changelog
 
+- **0.64.1**
+    - Make currentJobId nullable
 - **0.64**
     - Require at least PHP 8.0
     - Use type declarations

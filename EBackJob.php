@@ -137,7 +137,7 @@ class EBackJob extends CApplicationComponent {
      *
      * @var int|null
      */
-    private int $currentJobId = null;
+    private ?int $currentJobId = null;
 
     /**
      * Connection to the database

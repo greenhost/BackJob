@@ -50,35 +50,35 @@ class EBackJob extends CApplicationComponent {
      *
      * @var string
      */
-    public $databaseComponent = 'db';
+    public string $databaseComponent = 'db';
 
     /**
      * Name of the cache component in this the Yii application
      *
      * @var string
      */
-    public $cacheComponent = 'cache';
+    public string $cacheComponent = 'cache';
 
     /**
      * Should we use the cache?
      *
      * @var bool
      */
-    public $useCache = true;
+    public bool $useCache = true;
 
     /**
      * Should we use the database?
      *
      * @var bool
      */
-    public $useDb = true;
+    public bool $useDb = true;
 
     /**
      * Database table name to be used
      *
      * @var string
      */
-    public $tableName = 'e_background_job';
+    public string $tableName = 'e_background_job';
 
     /**
      * Whether to check that the database exists, and create it if it does not.
@@ -86,28 +86,28 @@ class EBackJob extends CApplicationComponent {
      *
      * @var bool
      */
-    public $checkAndCreateTable = false;
+    public bool $checkAndCreateTable = false;
 
     /**
      * Cache ID Prefix so we don't interfere with other cache-items
      *
      * @var string
      */
-    public $cachePrefix = "EBackJobPrefix-";
+    public string $cachePrefix = "EBackJobPrefix-";
 
     /**
      * User agent used in the background request
      *
      * @var string
      */
-    public $userAgent = 'Mozilla/5.0 Firefox/3.6.12';
+    public string $userAgent = 'Mozilla/5.0 Firefox/3.6.12';
 
     /**
      * Number of seconds after which an error-timeout occurs.
      *
      * @var int
      */
-    public $errorTimeout = 120;
+    public int $errorTimeout = 120;
 
     /**
      * Number of days we keep a backlog of database entries of succesfully
@@ -115,7 +115,7 @@ class EBackJob extends CApplicationComponent {
      *
      * @var int
      */
-    public $backlogDays = 30;
+    public int $backlogDays = 30;
 
     /**
      * Number of days we keep a backlog of database entries of all requests. Set
@@ -123,35 +123,35 @@ class EBackJob extends CApplicationComponent {
      *
      * @var int
      */
-    public $allBacklogDays = 60;
+    public int $allBacklogDays = 60;
 
     /**
      * Unique key for your application
      *
      * @var string
      */
-    public $key = 'sjs&sk&F89fksL*987sdKf';
+    public string $key = 'sjs&sk&F89fksL*987sdKf';
 
     /**
      * If we're inside a jobrequest, this is the current ID
      *
-     * @var int
+     * @var int|null
      */
-    private $currentJobId;
+    private int $currentJobId = null;
 
     /**
      * Connection to the database
      *
      * @var CDbConnection
      */
-    private $databaseConnection;
+    private CDbConnection $databaseConnection;
 
     /**
      * Cache storage mechanism
      *
      * @var ICache
      */
-    private $cacheStorage;
+    private ICache $cacheStorage;
 
     /**
      * Initialize properties.
@@ -166,7 +166,7 @@ class EBackJob extends CApplicationComponent {
         // Are we in a request made by this class?
         if ($this->isInternalRequest()) {
             set_time_limit($this->errorTimeout + 5);
-            $this->currentJobId = $_REQUEST['_e_back_job_id'];
+            $this->currentJobId = intval($_REQUEST['_e_back_job_id']);
             if ($this->isMonitorRequest()) {
                 // Call the background worker endpoint in another request:
                 $this->monitor();
@@ -185,7 +185,7 @@ class EBackJob extends CApplicationComponent {
      *
      * @param CEvent $event
      */
-    public function startRequest($event) {
+    public function startRequest(CEvent $event) {
         ignore_user_abort(true);
         // Turn off web route for logging
         if (isset(Yii::app()->log->routes['cweb'])) {
@@ -200,10 +200,10 @@ class EBackJob extends CApplicationComponent {
      *
      * @param CEvent $event
      */
-    public function endRequest($event) {
+    public function endRequest(CEvent $event) {
         $content = ob_get_clean();
         if ($error = Yii::app()->errorHandler->error) {
-            $this->fail($content . var_export($error['message'], true));
+            $this->fail($content . "\n" . json_encode($error['message']));
         } else {
             $this->finish($content);
         }
@@ -213,10 +213,10 @@ class EBackJob extends CApplicationComponent {
      * Returns the current status of the background job and marks it as failed
      * if the execution has timed out.
      *
-     * @param  int $jobId
+     * @param  int $jobId the unique Id of the job
      * @return array The progress, status and status_text of this job
      */
-    public function getStatus($jobId) {
+    public function getStatus(int $jobId): array {
         $job = $this->getCheckedJob($jobId);
 
         // Only make these fields publicly available:
@@ -231,10 +231,10 @@ class EBackJob extends CApplicationComponent {
      * Fetches the job from storage and marks it as failed if the execution has
      * timed out or returns default values if the job does not exist yet.
      *
-     * @param  int $jobId
+     * @param  int $jobId the unique Id of the job
      * @return array the job
      */
-    private function getCheckedJob($jobId) {
+    private function getCheckedJob(int $jobId): array {
         // Get job from either cache or DB
         $job = $this->getJob($jobId);
 
@@ -257,10 +257,8 @@ class EBackJob extends CApplicationComponent {
         $lastUpdate = strtotime($job['updated_time']);
         $timedOut = ($lastUpdate + $this->errorTimeout) < time();
         if ($jobId && $uncompleted && $timedOut) {
-            $error = "<strong>Error: job timeout</strong>";
-            $text = $job['status_text'] .  "<br/>" . $error;
-            $this->fail($text, $jobId);
-            $job = $this->getCheckedJob($jobId);
+            $text = $job['status_text'] . "\nError: job timeout";
+            $this->fail($text, $jobId); // Ends the script
         }
 
         return $job;
@@ -269,62 +267,82 @@ class EBackJob extends CApplicationComponent {
     /**
      * Returns whether a job exists with the specified Id
      *
-     * @param  int $jobId the unique ID of the job
+     * @param  int $jobId the unique Id of the job
      * @return bool whether a job exists with thee specified Id
      */
-    public function jobExists($jobId) {
-        return $this->getJob($jobId) !== false;
+    public function jobExists(int $jobId): bool {
+        return !is_null($this->getJob($jobId));
     }
 
     /**
      * Returns a job from either the cache or the database. If the job is not in
      * the cache, but is in the database, it's added to the cache.
      *
-     * @param  int $jobId the unique ID of the job
-     * @return array|false the job if it's found, otherwise false.
+     * @param  int $jobId the unique Id of the job
+     * @return array|null the job if it's found, otherwise NULL.
      */
-    private function getJob($jobId) {
+    private function getJob(int $jobId): ?array {
         if (!$jobId) {
-            return false;
+            return null;
         }
-        $job = false;
+
         if ($this->useCache) {
             $job = $this->getCache()->get($this->cachePrefix . $jobId);
+            if (is_array($job)) {
+                return $job;
+            }
         }
-        if (!$job && $this->useDb) {
+
+        if ($this->useDb) {
             $job = $this->getDatabase()->createCommand()
                 ->select('*')
                 ->from($this->tableName)
                 ->where('id=:id')
                 ->queryRow(true, [':id' => $jobId]);
-            if ($job && $this->useCache) {
+            if (!is_array($job)) {
+                return null;
+            }
+
+            if ($this->useCache) {
                 // Update the cache with all the data
                 $this->getCache()->set($this->cachePrefix . $jobId, $job);
             }
+            return $job;
         }
-        return $job;
+
+        return null;
     }
 
     /**
      * Starts a new background job and returns ID of that job.
      *
      * @param  string|array $request Route to controller/action
-     * @param  bool $asCurrentUser run job as the current user? (Default = true)
-     * @param  int $timedelay Seconds to postpone
+     * @param  bool $withUserCookies whether to send along all client cookies
+     * @param  int $delay Seconds to postpone the start of the job
      * @return int Id of the new job
+     * @throws RuntimeException if the job cannot be started
      */
-    public function start($request, $asCurrentUser = true, $timedelay = 0) {
-        $jobId = $this->createJob($request, $timedelay);
+    public function start(
+        string|array $request,
+        bool $withUserCookies = true,
+        int $delay = 0
+    ): int {
+        if ($delay > $this->errorTimeout) {
+            throw new RangeException('Job delay cannot exceed error timeout');
+        }
+        $jobId = $this->createJob($request, $delay);
 
         list($route, $params) = $this->requestToRoute($request);
         $params['_e_back_job_monitor'] = 'yes';
         $params['_e_back_job_id'] = $jobId;
 
-        $return = $this->doRequest($route, $params, $asCurrentUser, true);
-
-        if ($return !== true) {
-            $this->fail(strval($return), $jobId);
+        try {
+            $async = true; // Do not wait for results, return immediately
+            $this->doRequest($route, $params, $withUserCookies, $async);
+        } catch (Throwable $e) {
+            $this->fail($e->getMessage(), $jobId);
         }
+
         return $jobId;
     }
 
@@ -332,13 +350,13 @@ class EBackJob extends CApplicationComponent {
      * Update some or all fields of a job in storage
      *
      * @param array $fields the fields that must be updated
-     * @param int $jobId
+     * @param int|null $jobId the unique Id of the job
      */
-    private function updateJob($fields = [], $jobId = false) {
-        if (!$jobId) {
+    private function updateJob(array $fields = [], ?int $jobId = null) {
+        if (is_null($jobId)) {
             $jobId = $this->currentJobId;
         }
-        if (!$jobId) {
+        if (is_null($jobId)) {
             return;
         }
 
@@ -351,7 +369,7 @@ class EBackJob extends CApplicationComponent {
             $fields
         );
 
-        $msg = "Updating job $jobId with fields: " . var_export($fields, true);
+        $msg = "Updating job $jobId with fields: " . json_encode($fields);
         Yii::trace($msg, "application.EBackJob");
 
         if ($this->useCache) {
@@ -369,7 +387,10 @@ class EBackJob extends CApplicationComponent {
      * @param int|float|null $progress percentage done or NULL to not change it
      * @param string|null $statusText message or NULL to use the buffer contents
      */
-    public function update($progress = null, $statusText = null) {
+    public function update(
+        int|float|null $progress = null,
+        ?string $statusText = null
+    ) {
         $fields = [];
         if (!is_null($progress)) {
             $progress = min(100, max(0, $progress));
@@ -388,7 +409,10 @@ class EBackJob extends CApplicationComponent {
      * @param int $increment the desired percentage increment
      * @param string|null $statusText message or NULL to use the buffer contents
      */
-    public function incrementProgress($increment, $statusText = null) {
+    public function incrementProgress(
+        int $increment,
+        ?string $statusText = null
+    ) {
         $job = $this->getCheckedJob($this->currentJobId);
         $this->update($job['progress'] + $increment, $statusText);
     }
@@ -396,15 +420,11 @@ class EBackJob extends CApplicationComponent {
     /**
      * Finish a job (alias for "update as finished")
      *
-     * @param string $statusText
-     * @param int|false $jobId
+     * @param string|null $statusText
+     * @param int|null $jobId the unique Id of the job
      */
-    public function finish($statusText = '', $jobId = false) {
-        // Backwards compatibility:
-        if (is_array($statusText)) {
-            $statusText = $statusText['status_text'] ?? '';
-        }
-        if (!$jobId) {
+    public function finish(?string $statusText = null, ?int $jobId = null) {
+        if (is_null($jobId)) {
             $jobId = $this->currentJobId;
         }
         $job = $this->getCheckedJob($jobId);
@@ -414,7 +434,7 @@ class EBackJob extends CApplicationComponent {
                 'end_time'  => date('Y-m-d H:i:s'),
                 'status'    => self::STATUS_COMPLETED
             ];
-            if ($statusText !== '') {
+            if (!is_null($statusText)) {
                 $fields['status_text'] = $statusText;
             }
             $this->updateJob($fields, $jobId);
@@ -425,22 +445,18 @@ class EBackJob extends CApplicationComponent {
     /**
      * Fail a job (alias for "update as finished with a fail status")
      *
-     * @param string $statusText
-     * @param int|false $jobId
+     * @param string|null $statusText
+     * @param int|null $jobId the unique Id of the job
      */
-    public function fail($statusText = '', $jobId = false) {
-        // Backwards compatibility:
-        if (is_array($statusText)) {
-            $statusText = $statusText['status_text'] ?? '';
-        }
-        if (!$jobId) {
+    public function fail(?string $statusText = null, ?int $jobId = false) {
+        if (is_null($jobId)) {
             $jobId = $this->currentJobId;
         }
         $fields = [
             'end_time'  => date('Y-m-d H:i:s'),
             'status'    => self::STATUS_FAILED
         ];
-        if ($statusText !== '') {
+        if (!is_null($statusText)) {
             $fields['status_text'] = $statusText;
         }
         $this->updateJob($fields, $jobId);
@@ -452,7 +468,7 @@ class EBackJob extends CApplicationComponent {
      *
      * @return CDbConnection
      */
-    private function getDatabase() {
+    private function getDatabase(): CDbConnection {
         if (!isset($this->databaseConnection)) {
             $componentName = $this->databaseComponent;
             $this->databaseConnection = Yii::app()->$componentName;
@@ -466,7 +482,7 @@ class EBackJob extends CApplicationComponent {
      * @return ICache
      */
 
-    private function getCache() {
+    private function getCache(): ICache {
         if (!isset($this->cacheStorage)) {
             $componentName = $this->cacheComponent;
             $this->cacheStorage = Yii::app()->$componentName;
@@ -477,10 +493,10 @@ class EBackJob extends CApplicationComponent {
     /**
      * Updates some or all fields of a job in the cache storage
      *
-     * @param int $jobId
+     * @param int $jobId the unique Id of the job
      * @param array $fields
      */
-    private function updateCache($jobId, $fields) {
+    private function updateCache(int $jobId, array $fields) {
         $cacheId = $this->cachePrefix . $jobId;
         $job = $this->getCache()->get($cacheId);
         if ($job) {
@@ -492,10 +508,10 @@ class EBackJob extends CApplicationComponent {
     /**
      * Updates some or all fields of a job in the database
      *
-     * @param int $jobId
+     * @param int $jobId the unique Id of the job
      * @param array $fields
      */
-    private function updateDatabase($jobId, $fields) {
+    private function updateDatabase(int $jobId, array $fields) {
         $this->getDatabase()->createCommand()->update(
             $this->tableName,
             $fields,
@@ -508,29 +524,32 @@ class EBackJob extends CApplicationComponent {
      * Creates a new job and stores it in the database and/or cache
      *
      * @param  string|array $request Route to controller/action
-     * @param  int $timedelay Seconds to postpone
+     * @param  int $delay Seconds to postpone the start of the job
      * @return int the newly created job Id
      */
-    private function createJob($request, $timedelay = 0) {
-        $jobId = false;
-        $now = time();
-        $timedelay = max(0, $timedelay);
+    private function createJob($request, $delay = 0): int {
+        $now    = time();
+        $delay  = max(0, $delay);
 
         $job = [
             'progress'      => 0,
             'status'        => self::STATUS_STARTED,
-            'start_time'    => date('Y-m-d H:i:s', $now + $timedelay),
+            'start_time'    => date('Y-m-d H:i:s', $now + $delay),
             'updated_time'  => date('Y-m-d H:i:s', $now),
             'request'       => json_encode($request),
             'status_text'   => ''
         ];
+
+        $jobId = null;
         if ($this->useDb) {
-            $this->getDatabase()->createCommand()->insert($this->tableName, $job);
-            $jobId = $this->getDatabase()->lastInsertId;
+            $db = $this->getDatabase();
+            $db->createCommand()->insert($this->tableName, $job);
+            $insertId = $db->lastInsertId;
+            $jobId = $insertId === false ? null : intval($insertId);
         }
         if ($this->useCache) {
-            if (!$jobId) {
-                $jobId = $this->getNewCacheId();
+            if (is_null($jobId)) {
+                $jobId = $this->nextJobIdInCache();
             }
             $this->updateCache($jobId, $job);
         }
@@ -538,22 +557,22 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
-     * Get a new unique cache id for a new job
+     * Get the next Job Id that is still unused in the cache
      *
      * @return int
      */
-    private function getNewCacheId() {
+    private function nextJobIdInCache(): int {
         // The last used job Id is also stored in cache:
         $maxIdCacheId = $this->cachePrefix . 'maxid';
         // If it is absent in the cache, set it to zero:
         $this->getCache()->add($maxIdCacheId, 0);
-        $jobId = $this->getCache()->get($maxIdCacheId);
+        $jobId = intval($this->getCache()->get($maxIdCacheId));
         // Loop over all existing jobs to increase the maximum Id:
         while ($this->getCache()->get($this->cachePrefix . $jobId)) {
             $jobId += 1;
             $this->getCache()->set($maxIdCacheId, $jobId);
         }
-        return $this->cachePrefix . $jobId;
+        return $jobId;
     }
 
     /**
@@ -582,31 +601,36 @@ class EBackJob extends CApplicationComponent {
      * progress or failure.
      */
     protected function monitor() {
-        $jobId = $this->currentJobId;
-        $job = $this->getCheckedJob($jobId);
+        $jobId  = $this->currentJobId;
+        $job    = $this->getCheckedJob($jobId);
+        $now    = time();
+        $start  = strtotime($job['start_time']);
 
-        // If the start time is in the future, wait for that time (and re-check again)
-        while (($job = $this->getCheckedJob($jobId)) && strtotime($job['start_time']) > time()) {
-            // Calculate how many seconds we should wait before starting:
-            $waitTime = strtotime($job['start_time']) - time();
+        if ($start > $now) {
+            $waitTime = $start - $now;
+            // Allow for the full timeout after waiting and some margin:
             set_time_limit($this->errorTimeout + $waitTime + 5);
             sleep($waitTime);
+            // Reset the `updated_time` to allow for the full timeout:
+            $this->updateJob(['updated_time' => date('Y-m-d H:i:s')], $jobId);
+            // Fetch the updated values from storage:
+            $job = $this->getJob($jobId);
         }
 
         if ($job['request']) {
             $request = json_decode($job['request'], true);
             list($route, $params) = $this->requestToRoute($request);
             $params['_e_back_job_id'] = $jobId;
-            $result = $this->doRequest($route, $params);
-
-            if ($result !== true) {
+            try {
+                $this->doRequest($route, $params);
+            } catch (Throwable $e) {
                 $job = $this->getCheckedJob($jobId);
-                $this->fail($job['status_text'] . '<br>' . $result);
+                $this->fail($job['status_text'] . "\n" . $e->getMessage());
             }
             // Make sure it's finished if it's not finished or failed already:
             $this->finish();
         } else {
-            $data = var_export($job, true);
+            $data = json_encode($job);
             $this->fail("Error: Request for job $jobId not found: $data");
         }
 
@@ -617,32 +641,38 @@ class EBackJob extends CApplicationComponent {
      * Make a request to the specified route
      *
      * @param  string $route Yii route to the action to run
-     * @param  array $request Optional array of GET/POST parameters
-     * @param  bool $asCurrentUser run job as the current user? (Default = true)
-     * @param  bool $async whether to return immediately and not wait for results
-     * @return bool|string Returns either error message or true
+     * @param  array $params Optional array of GET/POST parameters
+     * @param  bool $withUserCookies whether to send along all client cookies
+     * @param  bool $async whether to return immediately & not wait for results
+     * @throws RuntimeException if something went wrong
      */
-    private function doRequest($route, $request = [], $asCurrentUser = true, $async = false) {
-        $method = $request['backjobMethod'] ?? 'GET';
+    private function doRequest(
+        string $route,
+        array $params = [],
+        bool $withUserCookies = true,
+        bool $async = false
+    ) {
+        $method = $params['backjobMethod'] ?? 'GET';
 
         if (Yii::app()->request->enableCsrfValidation && $method == 'POST') {
             $tokenName = Yii::app()->request->csrfTokenName;
             $tokenValue = Yii::app()->request->getCsrfToken();
-            $request['backjobPostdata'][$tokenName] = $tokenValue;
+            $params['backjobPostdata'][$tokenName] = $tokenValue;
         }
         if ($this->isMonitorRequest()) {
             $postdata = file_get_contents("php://input");
-            unset($request['backjobMethod']);
-        } elseif (isset($request['backjobPostdata'])) {
-            $postdata = http_build_query($request['backjobPostdata']);
-            unset($request['backjobPostdata']);
+            unset($params['backjobMethod']);
+        } elseif (isset($params['backjobPostdata'])) {
+            $postdata = http_build_query($params['backjobPostdata']);
+            unset($params['backjobPostdata']);
         } else {
             $postdata = '';
         }
 
-        $request['_e_back_job_check'] = md5($request['_e_back_job_id'] . $this->key);
+        $jobId = $params['_e_back_job_id'];
+        $params['_e_back_job_check'] = md5($jobId . $this->key);
 
-        $uri = Yii::app()->createAbsoluteUrl($route, $request);
+        $uri = Yii::app()->createAbsoluteUrl($route, $params);
         $uri = '/' . preg_replace('/https?:\/\/(.)*?\//', '', $uri);
 
         $port = Yii::app()->request->serverPort;
@@ -656,56 +686,23 @@ class EBackJob extends CApplicationComponent {
 
         $hostname = ($port == 443 ? 'ssl://' : '') . $host;
         $fp = fsockopen($hostname, $port, $errno, $errstr, 1000);
-        if ($fp == false) {
-            return "Error $errno: $errstr";
-        }
-        // Come to the dark side! We have
-        $cookies = '';
-        if ($asCurrentUser) {
-            foreach (Yii::app()->request->cookies as $k => $v) {
-                if (Yii::app()->request->enableCookieValidation) {
-                    $v = Yii::app()->getSecurityManager()->hashData(serialize($v));
-                }
-                $cookies .= urlencode($k) . '=' . urlencode($v) . '; ';
-            }
+        if ($fp === false) {
+            throw new UnexpectedValueException("Error $errno: $errstr");
         }
 
-        if (Yii::app()->request->enableCookieValidation) {
-            $sessionId = Yii::app()->session->sessionID;
-            $cookies .= urlencode('PHPSESSID') . '=' . urlencode($sessionId) . '; ';
-        }
+        $cookie     = $this->buildCookie($withUserCookies);
+        $request    = $this->buildRequest(
+            $method,
+            $uri,
+            $host,
+            $cookie,
+            $postdata
+        );
 
-        // Also check if there's an authentication token that needs forwarding:
-        $token = false;
-
-        // Check for API token
-        if (method_exists('ApiIdentity', 'getBearerToken')) {
-            $token = ApiIdentity::getBearerToken(false);
-        }
-
-        $lf = "\r\n";
-        //'Host: ' . $host . ($port ? ':' : '') . $port . $lf .
-        $req = $method . ' ' . $uri . ' HTTP/1.1' . $lf .
-                'Host: ' . $host . $lf .
-                'User-Agent: ' . $this->userAgent . $lf .
-                'Cache-Control: no-store, no-cache, must-revalidate' . $lf .
-                'Cache-Control: post-check=0, pre-check=0' . $lf .
-                'Pragma: no-cache' . $lf .
-                ($cookies ? 'Cookie: ' . $cookies . $lf : '' ) .
-                ($token ? 'Authorization: ' . $token . $lf : '');
-
-        if ($postdata) {
-            $req .= 'Content-Type: application/x-www-form-urlencoded' . $lf .
-                    'Content-Length: ' . strlen($postdata) . $lf .
-                    'Connection: Close' . $lf . $lf .
-                    $postdata;
-        } else {
-            $req .= 'Connection: Close' . $lf . $lf;
-        }
-
-        Yii::trace("Running background request: " . $req, "application.EBackJob");
+        $msg = "Running background request: $request";
+        Yii::trace($msg, "application.EBackJob");
         // Do the request
-        fwrite($fp, $req);
+        fwrite($fp, $request);
 
         // Echo results if we're not async
         if (!$async) {
@@ -720,7 +717,85 @@ class EBackJob extends CApplicationComponent {
 
         // Close connection
         fclose($fp);
-        return true;
+    }
+
+    /**
+     * Creates a cookie string containing the PHP session Id and optionally all
+     * the client cookies.
+     *
+     * @param  bool $withUserCookies whether to include all client cookies
+     * @return string the cookie string for an HTTP request
+     */
+    private function buildCookie(bool $withUserCookies): string {
+        $cookie     = '';
+        $validate   = Yii::app()->request->enableCookieValidation;
+
+        if ($withUserCookies) {
+            $security = Yii::app()->getSecurityManager();
+            foreach (Yii::app()->request->cookies as $key => $value) {
+                if ($validate) {
+                    $value = $security->hashData(serialize($value));
+                }
+                $cookie .= urlencode($key) . '=' . urlencode($value) . '; ';
+            }
+        }
+
+        if ($validate) {
+            $sessionId = Yii::app()->session->sessionID;
+            $cookie .= urlencode('PHPSESSID') . '='
+                . urlencode($sessionId) . '; ';
+        }
+
+        return $cookie;
+    }
+
+    /**
+     * Creates an HTTP request string
+     *
+     * @param  string $method
+     * @param  string $uri
+     * @param  string $host
+     * @param  string $cookie
+     * @param  string $postdata
+     * @return string the HTTP request string
+     */
+    private function buildRequest(
+        string $method,
+        string $uri,
+        string $host,
+        string $cookie,
+        string $postdata = ''
+    ): string {
+        $lines = [
+            "$method $uri HTTP/1.1",
+            "Host: $host",
+            "User-Agent: $this->userAgent",
+            'Cache-Control: no-store, no-cache, must-revalidate',
+            'Cache-Control: post-check=0, pre-check=0',
+            'Pragma: no-cache'
+        ];
+
+        if ($cookie) {
+            $lines[] = "Cookie: $cookie";
+        }
+
+        // Check if there is an authentication token that needs forwarding:
+        if (method_exists('ApiIdentity', 'getBearerToken')) {
+            $lines[] = 'Authorization: ' . ApiIdentity::getBearerToken(false);
+        }
+
+        if ($postdata) {
+            $lines[] = 'Content-Type: application/x-www-form-urlencoded';
+            $lines[] = 'Content-Length: ' . strlen($postdata);
+            $lines[] = 'Connection: Close';
+            $lines[] = ''; // Blank line before POST data
+            $lines[] = $postdata;
+        } else {
+            $lines[] = 'Connection: Close';
+            $lines[] = ''; // End with blank line?
+        }
+
+        return implode("\r\n", $lines);
     }
 
     /**
@@ -729,18 +804,18 @@ class EBackJob extends CApplicationComponent {
      *
      * @return bool
      */
-    private function isInternalRequest() {
+    private function isInternalRequest(): bool {
         $jobId = $_REQUEST['_e_back_job_id'] ?? '';
         $hash = $_REQUEST['_e_back_job_check'] ?? '';
         return $hash === md5($jobId . $this->key);
     }
 
     /**
-     * Check if we're a monitor-thread
+     * Checks whether we are a monitor-thread.
      *
      * @return bool
      */
-    private function isMonitorRequest() {
+    private function isMonitorRequest(): bool {
         return isset($_GET['_e_back_job_monitor']) && $this->isInternalRequest();
     }
 
@@ -749,22 +824,21 @@ class EBackJob extends CApplicationComponent {
      *
      * @return bool
      */
-    public function isWorkerRequest() {
+    public function isWorkerRequest(): bool {
         return !isset($_GET['_e_back_job_monitor']) && $this->isInternalRequest();
     }
 
     /**
-     * Transform a request to a route and a parameter array
+     * Transform a request to a route and a parameters array
      *
      * @param  array|string $request
      * @return array
      */
-    private function requestToRoute($request) {
+    private function requestToRoute(array|string $request): array {
         $params = [];
         if (is_array($request)) {
-            $route = $request[0];
             $params = $request;
-            unset($params[0]);
+            $route  = array_shift($params);
         } else {
             $route = $request;
         }

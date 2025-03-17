@@ -4,6 +4,6 @@
     "license" : "New BSD License",
     "homepage": "https://github.com/greenhost/BackJob",
     "require": {
-        "php": ">=7.2"
+        "php": ">=8.0"
     }
 }

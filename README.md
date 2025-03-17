@@ -9,8 +9,8 @@ please look at the [runactions](http://www.yiiframework.com/extension/runactions
 
 ## Requirements
 
-Works with Yii-1.1.14 and up. Needs to be able to use fsockopen and fwrite to
-itself.
+Works with Yii-1.1.14 and up, running on PHP 8.0 or higher. Needs to be able to
+use fsockopen and fwrite to itself.
 
 **Important:** If you want to run background jobs as the current user (which is
 the default option), you must use some kind of non-blocking session storage,
@@ -34,7 +34,7 @@ composer.json file:
     }
 ],
 "require": {
-    "greenhost/backjob": "^0.63"
+    "greenhost/backjob": "^0.64"
 },
 ~~~
 
@@ -74,8 +74,8 @@ Yii::setPathOfAlias('composer', dirname(__FILE__) . '/../../../vendor');
 
 ## Usage
 
-It's possible to start any controllers' action that is reachable through a url,
-but recommended to have dedicated actions to be run in the background. You'll
+It is possible to start any controllers' action that is reachable through a url,
+but recommended to have dedicated actions to be run in the background. You will
 have to make your own progress reports, otherwise progress will just jump from 0
 to 100.
 
@@ -91,17 +91,16 @@ $jobWithParams = Yii::app()->background->start([
 ]);
 ~~~
 
-Then you'll probably want to use a time-intervaled ajax request to get the
-progress. Getting the status of a specific job. This returns an array of the
-form:
+Then you will probably want to use a time-intervaled ajax request to get the
+status of a specific job. This returns an array of the form:
 
 ~~~php
 $status = Yii::app()->background->getStatus($jobId);
 //This returns an array that looks something like this:
 [
-    'progress' => 20, //percentage (integer 0-100) of completeness
-    'status' => EBackJob::STATUS_INPROGRESS, // (integer 0-4)
-    'status_text' => 'The complete output of the request, so far',
+    'progress'      => 20, //percentage (integer 0-100) of completeness
+    'status'        => EBackJob::STATUS_INPROGRESS, // (integer 0-4)
+    'status_text'   => 'The complete output of the request, so far',
 ];
 ~~~
 
@@ -109,19 +108,19 @@ During the background job, the action that actually runs the job itself can
 update its progress both by echoing and setting the progress counter:
 
 ~~~php
-echo "Starting 1<br/>";
+echo "Starting 1\n";
 Yii::app()->background->update(20);
 do_long_function1();
-echo "Processing 2<br/>";
+echo "Processing 2\n";
 Yii::app()->background->update(60);
 if(!do_long_function2()){
     echo "Error occurred!";
     Yii::app()->background->fail(); // this also ends the application immediately!
 }
-echo "Finishing 3<br/>";
+echo "Finishing 3\n";
 Yii::app()->background->update(90);
 do_last_function3();
-echo "Done<br/>";
+echo "Done\n";
 ~~~
 
 If you don't want a list or log of echoed text, but replace it, you can use the
@@ -159,21 +158,21 @@ Yii::app()->background->start([
 ~~~php
 class testController extends Controller {
 
-    public function actionProgressMonitor(){
+    public function actionProgressMonitor() {
         $jobId = Yii::app()->background->start(['test/testbackground']);
         $this->render('progress'); // empty file, or containing:
-        echo "Progress: <div id='test'></div>";
+        echo "Progress: <pre id='test'></pre>";
         $url = $this->createUrl('test/getStatus', ['id' => $jobId]);
         $loadFunction = "function(){ $('#test').load('$url'); }";
         echo CHtml::script("$(function(){ setInterval($loadFunction, 1000); });");
     }
 
-    public function actionGetStatus($id){
+    public function actionGetStatus(int $id) {
         echo json_encode(Yii::app()->background->getStatus($id));
         Yii::app()->end();
     }
 
-    public function actionTestbackground(){
+    public function actionTestbackground() {
         Yii::app()->background->update(1);
         echo "Job started.";
         sleep(3);
@@ -197,6 +196,7 @@ class testController extends Controller {
 The client session can call these methods:
 - `start()` to request the execution of a new background job
 - `getStatus()` to get the status of an existing background job
+- `jobExists()` to check whether a background job exists
 
 The worker session can call these methods:
 - `update()` to set a progress percentage and store the current output buffer
@@ -228,6 +228,10 @@ should typically be a controller action written for background work.
 
 ## Changelog
 
+- **0.64**
+    - Require at least PHP 8.0
+    - Use type declarations
+    - Remove HTML from generated responses
 - **0.63**
     - Replace getExistingJob() with jobExists() method
     - Make getDatabase() and getCache() private

@@ -448,7 +448,7 @@ class EBackJob extends CApplicationComponent {
      * @param string|null $statusText
      * @param int|null $jobId the unique Id of the job
      */
-    public function fail(?string $statusText = null, ?int $jobId = false) {
+    public function fail(?string $statusText = null, ?int $jobId = null) {
         if (is_null($jobId)) {
             $jobId = $this->currentJobId;
         }

@@ -228,6 +228,8 @@ should typically be a controller action written for background work.
 
 ## Changelog
 
+- **0.64.2**
+    - Use NULL as default jobId parameter
 - **0.64.1**
     - Make currentJobId nullable
 - **0.64**

@@ -84,11 +84,14 @@ Starting a background job only requires a valid route to that controller/action.
 ~~~php
 $jobId = Yii::app()->background->start('site/longJob');
 // Or, with parameters:
-$jobWithParams = Yii::app()->background->start([
+$jobId = Yii::app()->background->start([
     'site/paramJob',
     'id' => $id, 
     'param2' => true
 ]);
+// Or with a (free-format) scope restriction:
+$scope  = 'webmaster';
+$jobId  = Yii::app()->background->start('site/longJob', $scope);
 ~~~
 
 Then you will probably want to use a time-intervaled ajax request to get the
@@ -101,6 +104,9 @@ $status = Yii::app()->background->getStatus($jobId);
     'progress'      => 20, //percentage (integer 0-100) of completeness
     'status'        => EBackJob::STATUS_INPROGRESS, // (integer 0-4)
     'status_text'   => 'The complete output of the request, so far',
+    'start_time'    => '2013-11-18 14:11',
+    'updated_time'  => '2013-11-18 14:11',
+    'end_time'      => null,
 ];
 ~~~
 
@@ -141,8 +147,8 @@ These can be set in the request array using the keys `backjobMethod` and
 fields called `backjobMethod` and `backjobPostdata`, but this was the best way
 to add this while maintaining backwards compatibility.
 
-Example: To make a POST call with `$\_POST` values for `id` and `name` and a
-`$\_GET` value for `page` do:
+Example: To make a POST call with `$_POST` values for `id` and `name` and a
+`$_GET` value for `page` do:
 
 ~~~php
 Yii::app()->background->start([
@@ -195,8 +201,9 @@ class testController extends Controller {
 
 The client session can call these methods:
 - `start()` to request the execution of a new background job
-- `getStatus()` to get the status of an existing background job
 - `jobExists()` to check whether a background job exists
+- `getStatus()` to get the status of an existing background job
+- `getScope()` to get the scope of an existing background job
 
 The worker session can call these methods:
 - `update()` to set a progress percentage and store the current output buffer
@@ -228,6 +235,9 @@ should typically be a controller action written for background work.
 
 ## Changelog
 
+- **0.65**
+    - Add a free-format `scope` field to restrict where a job is applicable
+    - Bring back start, updated and end time in status fields
 - **0.64.2**
     - Use NULL as default jobId parameter
 - **0.64.1**

@@ -210,11 +210,21 @@ class EBackJob extends CApplicationComponent {
     }
 
     /**
+     * Returns whether a job exists with the specified Id
+     *
+     * @param  int $jobId the unique Id of the job
+     * @return bool whether a job exists with thee specified Id
+     */
+    public function jobExists(int $jobId): bool {
+        return !is_null($this->getJob($jobId));
+    }
+
+    /**
      * Returns the current status of the background job and marks it as failed
      * if the execution has timed out.
      *
      * @param  int $jobId the unique Id of the job
-     * @return array The progress, status and status_text of this job
+     * @return array The progress, status and time stamps of this job
      */
     public function getStatus(int $jobId): array {
         $job = $this->getCheckedJob($jobId);
@@ -224,7 +234,22 @@ class EBackJob extends CApplicationComponent {
             'progress'      => $job['progress'],
             'status'        => $job['status'],
             'status_text'   => $job['status_text'],
+            'start_time'    => $job['start_time'],
+            'updated_time'  => $job['updated_time'],
+            'end_time'      => $job['end_time'],
         ];
+    }
+
+    /**
+     * Returns the free-format scope value that was set at job creation, or an
+     * empty string if no scope was defined.
+     *
+     * @param  int $jobId the unique Id of the job
+     * @return string the scope of this job or an empty string
+     */
+    public function getScope(int $jobId): string {
+        $job = $this->getCheckedJob($jobId);
+        return $job['scope'] ?? '';
     }
 
     /**
@@ -262,16 +287,6 @@ class EBackJob extends CApplicationComponent {
         }
 
         return $job;
-    }
-
-    /**
-     * Returns whether a job exists with the specified Id
-     *
-     * @param  int $jobId the unique Id of the job
-     * @return bool whether a job exists with thee specified Id
-     */
-    public function jobExists(int $jobId): bool {
-        return !is_null($this->getJob($jobId));
     }
 
     /**
@@ -317,6 +332,7 @@ class EBackJob extends CApplicationComponent {
      * Starts a new background job and returns ID of that job.
      *
      * @param  string|array $request Route to controller/action
+     * @param  string $scope optional scope to reduce where the job applies
      * @param  bool $withUserCookies whether to send along all client cookies
      * @param  int $delay Seconds to postpone the start of the job
      * @return int Id of the new job
@@ -324,13 +340,14 @@ class EBackJob extends CApplicationComponent {
      */
     public function start(
         string|array $request,
+        string $scope = '',
         bool $withUserCookies = true,
         int $delay = 0
     ): int {
         if ($delay > $this->errorTimeout) {
             throw new RangeException('Job delay cannot exceed error timeout');
         }
-        $jobId = $this->createJob($request, $delay);
+        $jobId = $this->createJob($request, $scope, $delay);
 
         list($route, $params) = $this->requestToRoute($request);
         $params['_e_back_job_monitor'] = 'yes';
@@ -524,14 +541,20 @@ class EBackJob extends CApplicationComponent {
      * Creates a new job and stores it in the database and/or cache
      *
      * @param  string|array $request Route to controller/action
+     * @param  string $scope optional scope to reduce where the job applies
      * @param  int $delay Seconds to postpone the start of the job
      * @return int the newly created job Id
      */
-    private function createJob($request, $delay = 0): int {
+    private function createJob(
+        string|array $request,
+        string $scope = '',
+        int $delay = 0
+    ): int {
         $now    = time();
         $delay  = max(0, $delay);
 
         $job = [
+            'scope'         => $scope,
             'progress'      => 0,
             'status'        => self::STATUS_STARTED,
             'start_time'    => date('Y-m-d H:i:s', $now + $delay),
@@ -583,14 +606,15 @@ class EBackJob extends CApplicationComponent {
             $this->getDatabase()->schema->createTable(
                 $this->tableName,
                 [
-                    'id' => 'pk',
-                    'progress' => 'integer',
-                    'status' => 'integer',
-                    'start_time' => 'timestamp DEFAULT CURRENT_TIMESTAMP ',
-                    'updated_time' => 'timestamp',
-                    'end_time' => 'timestamp',
-                    'request' => 'text',
-                    'status_text' => 'text',
+                    'id'            => 'pk',
+                    'scope'         => 'string',
+                    'progress'      => 'integer',
+                    'status'        => 'integer',
+                    'start_time'    => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+                    'updated_time'  => 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+                    'end_time'      => 'TIMESTAMP NULL DEFAULT NULL',
+                    'request'       => 'text',
+                    'status_text'   => 'text',
                 ]
             )
         )->execute();

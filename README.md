@@ -235,6 +235,8 @@ should typically be a controller action written for background work.
 
 ## Changelog
 
+- **0.65.1**
+    - Add missing second blank line on internal GET requests
 - **0.65**
     - Add a free-format `scope` field to restrict where a job is applicable
     - Bring back start, updated and end time in status fields

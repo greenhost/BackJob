@@ -805,7 +805,10 @@ class EBackJob extends CApplicationComponent {
 
         // Check if there is an authentication token that needs forwarding:
         if (method_exists('ApiIdentity', 'getBearerToken')) {
-            $lines[] = 'Authorization: ' . ApiIdentity::getBearerToken(false);
+            $token = ApiIdentity::getBearerToken(false);
+            if ($token) {
+                $lines[] = 'Authorization: ' . $token;
+            }
         }
 
         if ($postdata) {
@@ -815,8 +818,11 @@ class EBackJob extends CApplicationComponent {
             $lines[] = ''; // Blank line before POST data
             $lines[] = $postdata;
         } else {
+            $lines[] = 'Content-Length: 0';
             $lines[] = 'Connection: Close';
-            $lines[] = ''; // End with blank line?
+            // Must end with TWO blank lines:
+            $lines[] = '';
+            $lines[] = '';
         }
 
         return implode("\r\n", $lines);
